@@ -8,7 +8,7 @@
 
 **让 AI 不止于分析，而是持续推进到实现与验证完成。**
 
-[![Version](https://img.shields.io/badge/version-2.3.8-orange.svg)](./pyproject.toml)
+[![Version](https://img.shields.io/badge/version-2.3.9--m-orange.svg)](./pyproject.toml)
 [![npm](https://img.shields.io/npm/v/helloagents.svg)](https://www.npmjs.com/package/helloagents)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB.svg)](./pyproject.toml)
 [![Commands](https://img.shields.io/badge/commands-15-6366f1.svg)](./helloagents/functions)
@@ -622,11 +622,13 @@ CHANGELOG 使用语义版本号（X.Y.Z），版本来源优先级：用户指�
 
 每次会话首条响应时，系统静默检查是否有新版本可用。检查结果缓存在 `~/.helloagents/.update_cache`，有效期由 `UPDATE_CHECK` 配置（默认 72 小时，设为 0 关闭）。有新版本时在响应末尾显示 `⬆️ 新版本 {version} 可用`。检查过程中的任何错误都会静默跳过，不影响正常使用。
 
+带 `+m` / `-m` 标识的维护版（例如发布标识 `2.3.9-m`，Python 元数据 `2.3.9+m`）默认跟随当前安装的维护分支。2.x/m 通道默认检查 `dev/2.3.8`，不再自动对比 `main` / 最新 3.x release；只有显式执行 `helloagents update <branch>` 时才切换到指定分支。
+
 ## 仓库结构
 
 - AGENTS.md：路由与工作流协议
 - SKILL.md：CLI 目标的技能发现元数据
-- pyproject.toml：包元数据（v2.3.8）
+- pyproject.toml：包元数据（v2.3.9+m）
 - helloagents/cli.py：CLI 入口
 - helloagents/_common.py：共享常量与工具函数
 - helloagents/core/：CLI 管理模块（安装、卸载、更新、状态、调度器、钩子设置）
@@ -775,7 +777,20 @@ CHANGELOG 使用语义版本号（X.Y.Z），版本来源优先级：用户指�
 
 ## 版本历史
 
-### v2.3.8（当前）
+### v2.3.9-m（当前）
+
+**维护通道：**
+- 发布 2.x/m 维护版 `v2.3.9-m`，Python 包元数据使用符合 PEP 440 的 `2.3.9+m`
+- 维护版更新检测默认跟随当前安装来源和分支；2.x/m 无显式分支时回退到 `dev/2.3.8`
+- 2.x/m 通道不再因为 `main` / 最新 3.x release 触发默认更新提示
+- `helloagents update <branch>` 仍保留显式切换分支能力
+
+**工作流规则增强：**
+- 新增 GPT 反模式规则，治理拆单交付、套话收尾和留一手行为
+- 新增产出标准、语言表述、技术选型、静默失败防护、阻塞判定和 UI 验收质量基线
+- 回移第一批计划设计增强：证据驱动假设、方案取舍、验证策略和更完整的方案包模板
+
+### v2.3.8
 
 **架构变更：**
 - 路由层级合并：删除 R2 简化流程和 R3 标准流程，统一为 R0/R1/R2 三层路由。新 R2 标准流程合并原 R2+R3 的适用场景

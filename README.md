@@ -8,7 +8,7 @@
 
 **Let AI go beyond analysis — keep pushing until implementation and verification are done.**
 
-[![Version](https://img.shields.io/badge/version-2.3.8-orange.svg)](./pyproject.toml)
+[![Version](https://img.shields.io/badge/version-2.3.9--m-orange.svg)](./pyproject.toml)
 [![npm](https://img.shields.io/npm/v/helloagents.svg)](https://www.npmjs.com/package/helloagents)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB.svg)](./pyproject.toml)
 [![Commands](https://img.shields.io/badge/commands-15-6366f1.svg)](./helloagents/functions)
@@ -620,11 +620,13 @@ When ≥6 structurally identical tasks exist in the same execution layer, the sy
 
 On the first response of each session, the system silently checks for new versions. Results are cached at `~/.helloagents/.update_cache`, valid for the duration set by `UPDATE_CHECK` (default 72 hours, set to 0 to disable). When a new version is available, `⬆️ New version {version} available` appears in the response footer. Any errors during the check are silently skipped and never interrupt normal usage.
 
+Maintenance builds marked with `+m` / `-m` (for example `2.3.9-m`, Python metadata `2.3.9+m`) follow their installed maintenance branch by default. The 2.x/m channel checks `dev/2.3.8` and no longer compares against `main` / latest 3.x releases unless you explicitly run `helloagents update <branch>`.
+
 ## Repository Guide
 
 - AGENTS.md: router and workflow protocol
 - SKILL.md: skill discovery metadata for CLI targets
-- pyproject.toml: package metadata (v2.3.8)
+- pyproject.toml: package metadata (v2.3.9+m)
 - helloagents/cli.py: CLI entry point
 - helloagents/_common.py: shared constants and utilities
 - helloagents/core/: CLI management modules (install, uninstall, update, status, dispatcher, hooks settings)
@@ -773,7 +775,20 @@ A: An experimental Claude Code feature where multiple Claude Code instances coll
 
 ## Version History
 
-### v2.3.8 (current)
+### v2.3.9-m (current)
+
+**Maintenance Channel:**
+- Published the 2.x/m maintenance build as `v2.3.9-m` while keeping Python package metadata PEP 440-compatible as `2.3.9+m`
+- Changed maintenance-build update detection to follow the installed branch/source by default, with the 2.x/m fallback branch set to `dev/2.3.8`
+- `main` / latest 3.x releases no longer trigger default update prompts for the 2.x/m channel
+- `helloagents update <branch>` still supports explicit branch switching when users intentionally leave the maintenance channel
+
+**Workflow Rule Improvements:**
+- Added GPT anti-pattern rules for split delivery, filler closings, and holding-back behavior
+- Added quality baselines for output standards, language style, technical choice, silent failure prevention, blocking criteria, and UI acceptance
+- Backported the first batch of planning-design improvements: evidence-driven assumptions, option tradeoffs, validation strategy, and richer plan templates
+
+### v2.3.8
 
 **Architecture Changes:**
 - Routing tier consolidation: removed R2 simplified flow and R3 standard flow, unified to R0/R1/R2 three-tier routing. New R2 standard flow merges use cases from both old R2 and R3

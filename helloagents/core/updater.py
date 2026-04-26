@@ -12,7 +12,7 @@ from .._common import (
 )
 from .version_check import (
     _detect_channel, _local_commit_id, _remote_commit_id,
-    _version_newer, _write_update_cache, fetch_latest_version,
+    _get_repo_url, _version_newer, _write_update_cache, fetch_latest_version,
 )
 from .win_helpers import (
     _cleanup_pip_remnants, _win_cleanup_bak,
@@ -24,6 +24,15 @@ from .win_helpers import (
 # ---------------------------------------------------------------------------
 # update command
 # ---------------------------------------------------------------------------
+
+def _build_git_install_url(repo_url: str, branch: str) -> str:
+    """Build a pip/uv VCS requirement URL from the detected install source."""
+    base = (repo_url or REPO_URL).removeprefix("git+")
+    if base.startswith("https://github.com/") and not base.endswith(".git"):
+        base = f"{base}.git"
+    branch_suffix = f"@{branch}" if branch != "main" else ""
+    return f"git+{base}{branch_suffix}"
+
 
 def update(switch_branch: str | None = None) -> None:
     """Update HelloAGENTS to the latest version, then auto-sync installed targets."""
@@ -50,11 +59,14 @@ def update(switch_branch: str | None = None) -> None:
     except Exception:
         pass
 
-    branch = switch_branch or _detect_channel()
+    branch = switch_branch or _detect_channel(local_ver)
+    repo_url = _get_repo_url()
 
     # Fetch remote version (unified helper — deduplicates old inline logic)
     print(_msg("  正在检查远程版本...", "  Checking remote version..."))
-    remote_ver = fetch_latest_version(branch, timeout=5)
+    remote_ver = fetch_latest_version(branch, timeout=5,
+                                      repo_url=repo_url,
+                                      local_ver=local_ver)
 
     print(_msg(f"  本地版本: {local_ver}", f"  Local version: {local_ver}"))
     print(_msg(f"  远程版本: {remote_ver or '未知'}", f"  Remote version: {remote_ver or 'unknown'}"))
@@ -71,7 +83,7 @@ def update(switch_branch: str | None = None) -> None:
         local_sha = _local_commit_id()
         remote_sha = ""
         try:
-            remote_sha = _remote_commit_id(branch)
+                remote_sha = _remote_commit_id(branch, repo_url)
         except Exception:
             pass
         if local_sha and remote_sha and local_sha == remote_sha:
@@ -109,7 +121,7 @@ def update(switch_branch: str | None = None) -> None:
     print()
 
     # --- execute update ---
-    branch_suffix = f"@{branch}" if branch != "main" else ""
+    install_url = _build_git_install_url(repo_url, branch)
     updated = False
     method = _detect_install_method()
     print(_msg("  正在从远程仓库下载并安装，请稍候...",
@@ -120,8 +132,7 @@ def update(switch_branch: str | None = None) -> None:
 
     # Try uv first
     if method == "uv":
-        uv_url = f"git+{REPO_URL}" + branch_suffix
-        uv_cmd = ["uv", "tool", "install", "--from", uv_url, "helloagents", "--force"]
+        uv_cmd = ["uv", "tool", "install", "--from", install_url, "helloagents", "--force"]
         try:
             result = subprocess.run(uv_cmd, capture_output=True, text=True,
                                     encoding="utf-8", errors="replace")
@@ -139,9 +150,8 @@ def update(switch_branch: str | None = None) -> None:
 
     # Fallback to pip
     if not updated:
-        pip_url = f"git+{REPO_URL}.git" + branch_suffix
         pip_cmd = [sys.executable, "-m", "pip", "install", "--upgrade",
-                   "--no-cache-dir", pip_url]
+                   "--no-cache-dir", install_url]
         if method == "uv":
             print(_msg("  尝试 pip 回退...", "  Trying pip fallback..."))
         try:
@@ -185,9 +195,8 @@ def update(switch_branch: str | None = None) -> None:
     _cleanup_pip_remnants()
 
     if not updated:
-        pip_url = f"git+{REPO_URL}.git" + branch_suffix
         print(_msg("  ✗ 更新失败。请手动执行:", "  ✗ Update failed. Try manually:"))
-        print(f"    pip install --upgrade --no-cache-dir {pip_url}")
+        print(f"    pip install --upgrade --no-cache-dir {install_url}")
         return
 
     # Re-exec: launch a NEW process for Phase 2+3 so that the freshly
@@ -220,15 +229,12 @@ def _post_update_sync(branch: str | None = None,
     """
     import subprocess
 
-    # Resolve branch if not provided
-    if not branch:
-        branch = _detect_channel()
-
-    # Write update cache with new version
     try:
         new_ver = get_version("helloagents")
     except Exception:
         new_ver = "unknown"
+    if not branch:
+        branch = _detect_channel(new_ver)
     _write_update_cache(False, new_ver, new_ver, branch)
 
     # Detect targets using new code

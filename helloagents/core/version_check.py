@@ -1,6 +1,6 @@
 """HelloAGENTS Version Check - Version detection, comparison, and update cache.
 
-Leaf module: only depends on stdlib + _common.REPO_API_LATEST.
+Leaf module: only depends on stdlib + _common constants.
 All output from check_update() is pure English to ensure AI CLI keyword matching
 works regardless of system locale.
 """
@@ -11,8 +11,12 @@ import re
 from pathlib import Path
 from importlib.metadata import version as get_version
 from urllib.request import urlopen, Request
+from urllib.parse import quote, urlparse
 
-from .._common import REPO_API_LATEST, CLI_TARGETS, PLUGIN_DIR_NAME
+from .._common import REPO_API_LATEST, REPO_URL, CLI_TARGETS, PLUGIN_DIR_NAME
+
+
+MAINTENANCE_BRANCH = "dev/2.3.8"
 
 
 # ---------------------------------------------------------------------------
@@ -68,11 +72,55 @@ def _read_direct_url() -> dict:
     return {}
 
 
-def _detect_channel() -> str:
-    """Detect install branch from package metadata. Returns actual branch name."""
+def _is_maintenance_version(ver: str) -> bool:
+    """Return True for maintenance build markers such as 2.3.9+m or 2.3.9-m."""
+    normalized = (ver or "").lower()
+    return bool(re.search(r"(\+m(?:$|[.\-+])|(?:^|[.\-+])m(?:$|[.\-+]))", normalized))
+
+
+def _default_branch_for_version(local_ver: str | None = None) -> str:
+    """Choose the default update branch for a local version."""
+    if local_ver is None:
+        try:
+            local_ver = get_version("helloagents")
+        except Exception:
+            local_ver = ""
+    return MAINTENANCE_BRANCH if _is_maintenance_version(local_ver) else "main"
+
+
+def _strip_git_prefix(url: str) -> str:
+    """Normalize pip-style git URLs for repository parsing."""
+    return (url or "").removeprefix("git+").split("#", 1)[0]
+
+
+def _parse_github_repo(url: str) -> tuple[str, str] | None:
+    """Parse common GitHub URL forms into (owner, repo)."""
+    raw = _strip_git_prefix(url).strip()
+    if raw.startswith("git@github.com:"):
+        path = raw.split(":", 1)[1]
+    else:
+        parsed = urlparse(raw)
+        host = parsed.netloc.lower()
+        if host not in {"github.com", "www.github.com", "git@github.com"}:
+            return None
+        path = parsed.path.lstrip("/")
+    parts = [p for p in path.split("/") if p]
+    if len(parts) < 2:
+        return None
+    return parts[0], parts[1].removesuffix(".git")
+
+
+def _get_repo_url() -> str:
+    """Resolve the installed repository URL, falling back to the canonical repo."""
+    direct_url = _read_direct_url().get("url", "")
+    return _strip_git_prefix(direct_url) if _parse_github_repo(direct_url) else REPO_URL
+
+
+def _detect_channel(local_ver: str | None = None) -> str:
+    """Detect install branch from metadata, or infer the default maintenance channel."""
     info = _read_direct_url()
     ref = info.get("vcs_info", {}).get("requested_revision", "")
-    return ref if ref else "main"
+    return ref if ref else _default_branch_for_version(local_ver)
 
 
 def _local_commit_id() -> str:
@@ -81,9 +129,14 @@ def _local_commit_id() -> str:
     return info.get("vcs_info", {}).get("commit_id", "")
 
 
-def _remote_commit_id(branch: str) -> str:
+def _remote_commit_id(branch: str, repo_url: str | None = None) -> str:
     """Fetch the latest commit hash on a remote branch via GitHub API."""
-    url = f"https://api.github.com/repos/hellowind777/helloagents/commits/{branch}"
+    repo = _parse_github_repo(repo_url or _get_repo_url())
+    if not repo:
+        return ""
+    owner, name = repo
+    ref = quote(branch, safe="")
+    url = f"https://api.github.com/repos/{owner}/{name}/commits/{ref}"
     req = Request(url, headers={
         "Accept": "application/vnd.github.v3+json",
         "User-Agent": "helloagents-update-checker",
@@ -93,33 +146,57 @@ def _remote_commit_id(branch: str) -> str:
     return data.get("sha", "")
 
 
-def _fetch_remote_version(branch: str) -> str:
+def _fetch_remote_version(branch: str, repo_url: str | None = None,
+                          timeout: int = 3) -> str:
     """Fetch version from pyproject.toml on a remote branch."""
-    url = f"https://raw.githubusercontent.com/hellowind777/helloagents/{branch}/pyproject.toml"
+    repo = _parse_github_repo(repo_url or _get_repo_url())
+    if not repo:
+        return ""
+    owner, name = repo
+    ref = quote(branch, safe="/")
+    url = f"https://raw.githubusercontent.com/{owner}/{name}/{ref}/pyproject.toml"
     req = Request(url, headers={"User-Agent": "helloagents-update-checker"})
-    with urlopen(req, timeout=3) as resp:
+    with urlopen(req, timeout=timeout) as resp:
         content = resp.read().decode("utf-8")
     m = re.search(r'version\s*=\s*"([^"]+)"', content)
     return m.group(1) if m else ""
 
 
-def fetch_latest_version(branch: str, timeout: int = 5) -> str:
+def _latest_release_api(repo_url: str) -> str:
+    """Return the releases/latest API URL for a GitHub repo URL."""
+    repo = _parse_github_repo(repo_url)
+    if not repo:
+        return REPO_API_LATEST
+    owner, name = repo
+    return f"https://api.github.com/repos/{owner}/{name}/releases/latest"
+
+
+def fetch_latest_version(branch: str | None = None, timeout: int = 5,
+                         repo_url: str | None = None,
+                         allow_release: bool = True,
+                         local_ver: str | None = None) -> str:
     """Unified remote version fetching (deduplicates check_update & update logic).
 
     For 'main' branch: tries GitHub Releases API first, falls back to pyproject.toml.
     For other branches: fetches from pyproject.toml directly.
 
     Args:
-        branch: Git branch name.
+        branch: Git branch name. If omitted, detects install branch or
+            maintenance-channel default from local_ver.
         timeout: HTTP timeout for the Releases API call (seconds).
+        repo_url: Repository URL. Defaults to the install source in direct_url.json.
+        allow_release: If False, skip releases/latest even for main.
+        local_ver: Optional local version used when branch must be inferred.
 
     Returns:
         Remote version string, or empty string on failure.
     """
+    branch = branch or _detect_channel(local_ver)
+    repo_url = repo_url or _get_repo_url()
     remote_ver = ""
-    if branch == "main":
+    if branch == "main" and allow_release:
         try:
-            req = Request(REPO_API_LATEST, headers={
+            req = Request(_latest_release_api(repo_url), headers={
                 "Accept": "application/vnd.github.v3+json",
                 "User-Agent": "helloagents-update-checker",
             })
@@ -130,12 +207,12 @@ def fetch_latest_version(branch: str, timeout: int = 5) -> str:
             pass
         if not remote_ver:
             try:
-                remote_ver = _fetch_remote_version("main")
+                remote_ver = _fetch_remote_version("main", repo_url, timeout)
             except Exception:
                 pass
     else:
         try:
-            remote_ver = _fetch_remote_version(branch)
+            remote_ver = _fetch_remote_version(branch, repo_url, timeout)
         except Exception:
             pass
     return remote_ver
@@ -260,7 +337,8 @@ def check_update(force: bool = False,
     """
     try:
         local_ver = get_version("helloagents")
-        branch = _detect_channel()
+        repo_url = _get_repo_url()
+        branch = _detect_channel(local_ver)
 
         # --- cache hit path (skipped when force=True) ---
         if not force:
@@ -279,7 +357,9 @@ def check_update(force: bool = False,
                 return False  # fresh cache, no update
 
         # --- cache miss / stale — do network check ---
-        remote_ver = fetch_latest_version(branch, timeout=3)
+        remote_ver = fetch_latest_version(branch, timeout=3,
+                                          repo_url=repo_url,
+                                          local_ver=local_ver)
         if remote_ver and _version_newer(remote_ver, local_ver):
             _write_update_cache(True, local_ver, remote_ver, branch, cache_ttl_hours)
             print(f"New version {remote_ver} available (local {local_ver}, branch {branch}). Run 'helloagents update' to upgrade.")
@@ -288,7 +368,7 @@ def check_update(force: bool = False,
         local_sha = _local_commit_id()
         if local_sha:
             try:
-                remote_sha = _remote_commit_id(branch)
+                remote_sha = _remote_commit_id(branch, repo_url)
                 if remote_sha and remote_sha != local_sha:
                     # Fixed: pure English output (was _msg() bilingual, broke AI CLI matching)
                     print(f"Remote has new commits (branch {branch}). Run 'helloagents update' to sync.")

@@ -36,6 +36,15 @@
 流程: 生成路径 plan/YYYYMMDDHHMM_{feature}/ → 冲突检查(使用_v2,_v3) → create_package.py → 填充 → 验证
 返回: success, package_path, errors
 保证: proposal.md + tasks.md 完整，格式符合规范
+质量要求:
+  proposal.md:
+    - 包含需求、方案、影响范围、风险评估
+    - R2 implementation 方案应包含方案取舍与验证策略
+  tasks.md:
+    - 每个任务是原子操作
+    - 每个任务包含文件路径或明确作用范围
+    - 每个任务包含预期变更、完成标准、验证方式、depends_on
+    - 任务可独立执行、独立验证，依赖关系可拓扑排序
 ```
 
 ### updateTask(taskId, status, result)
@@ -45,7 +54,7 @@
 参数: taskId("阶段号-任务号"), status(completed|failed|skipped|pending), result(可选)
 流程: 读取 tasks.md → 定位任务 → 更新状态符号 → 添加备注 → 更新统计 → 追加日志(最近5条) → 写回
 返回: success, progress, errors
-保证: 状态一致性（只能从 pending 转换），日志完整，统计准确
+保证: 状态一致性（只能从 pending 转换），日志完整，统计准确，完成备注能对应任务的完成标准或验证方式
 ```
 
 ### snapshot()
@@ -81,6 +90,11 @@ LIVE_STATUS 格式: 按 G11 定义
 触发: 方案包创建后、执行前
 流程: validate_package.py → 检查必需文件 → 检查格式 → 解析任务列表
 返回: valid, issues[{type(blocking|warning), message}]
+验收项:
+  ⛔ 阻断性: proposal.md 和 tasks.md 存在且非空，tasks.md 至少包含 1 个任务项
+  ⚠️ 警告性: proposal.md 缺少方案取舍、验证策略或风险边界
+  ⚠️ 警告性: tasks.md 任务缺少文件路径/作用范围、预期变更、完成标准、验证方式或 depends_on
+  ⚠️ 警告性: tasks.md 任务粒度过大，无法独立验证
 ```
 
 ---
