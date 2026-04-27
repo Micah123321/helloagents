@@ -2,7 +2,6 @@
 
 import os
 import sys
-from pathlib import Path
 from importlib.metadata import version as get_version
 
 from .._common import (
@@ -32,6 +31,30 @@ def _build_git_install_url(repo_url: str, branch: str) -> str:
         base = f"{base}.git"
     branch_suffix = f"@{branch}" if branch != "main" else ""
     return f"git+{base}{branch_suffix}"
+
+
+def _is_windows_entrypoint_lock_error(text: str) -> bool:
+    """Return whether uv failed while copying the Windows console launcher."""
+    if not text:
+        return False
+
+    lower = text.lower()
+    entrypoint_markers = (
+        "failed to install entrypoint",
+        "helloagents.exe",
+    )
+    lock_markers = (
+        "os error 32",
+        "winerror 32",
+        "being used by another process",
+        "used by another process",
+        "另一个程序正在使用此文件",
+        "进程无法访问",
+    )
+    return (
+        any(marker in lower for marker in entrypoint_markers)
+        and any(marker in lower for marker in lock_markers)
+    )
 
 
 def update(switch_branch: str | None = None) -> None:
@@ -83,7 +106,7 @@ def update(switch_branch: str | None = None) -> None:
         local_sha = _local_commit_id()
         remote_sha = ""
         try:
-                remote_sha = _remote_commit_id(branch, repo_url)
+            remote_sha = _remote_commit_id(branch, repo_url)
         except Exception:
             pass
         if local_sha and remote_sha and local_sha == remote_sha:
@@ -129,10 +152,14 @@ def update(switch_branch: str | None = None) -> None:
 
     # Preemptive unlock: rename exe BEFORE pip/uv to avoid lock entirely
     bak = win_preemptive_unlock()
+    allow_pip_fallback = method != "uv"
 
     # Try uv first
     if method == "uv":
-        uv_cmd = ["uv", "tool", "install", "--from", install_url, "helloagents", "--force"]
+        uv_cmd = [
+            "uv", "tool", "install", "--from", install_url,
+            "helloagents", "--force",
+        ]
         try:
             result = subprocess.run(uv_cmd, capture_output=True, text=True,
                                     encoding="utf-8", errors="replace")
@@ -141,19 +168,40 @@ def update(switch_branch: str | None = None) -> None:
                       else _msg("  ✓ 包更新完成 (uv)", "  ✓ Package updated (uv)"))
                 updated = True
             else:
+                stdout = result.stdout.strip()
                 stderr = result.stderr.strip()
+                combined = f"{stdout}\n{stderr}"
+                if sys.platform == "win32" and _is_windows_entrypoint_lock_error(combined):
+                    post = [[sys.executable, "-m", "helloagents.cli",
+                             "_post_update", branch, str(total_steps)]]
+                    all_post = post + [build_pip_cleanup_cmd()]
+                    if _win_deferred_pip(uv_cmd, post_cmds=all_post):
+                        print(_msg(
+                            "  helloagents.exe 被当前进程锁定，"
+                            "更新将在退出后自动完成。",
+                            "  helloagents.exe is locked; "
+                            "update will complete after exit."))
+                        if pre_targets:
+                            print(_msg(
+                                f"  已安装的 {len(pre_targets)} 个 CLI "
+                                f"工具也将自动同步。",
+                                f"  {len(pre_targets)} installed target(s) "
+                                f"will also be synced."))
+                        win_finish_unlock(bak, False)
+                        return
                 if stderr:
                     print(f"  uv error: {stderr}")
+                elif stdout:
+                    print(f"  uv error: {stdout}")
         except FileNotFoundError:
             print(_msg("  警告: 未找到 uv，回退到 pip。",
                        "  Warning: uv not found, falling back to pip."))
+            allow_pip_fallback = True
 
     # Fallback to pip
-    if not updated:
+    if not updated and allow_pip_fallback:
         pip_cmd = [sys.executable, "-m", "pip", "install", "--upgrade",
                    "--no-cache-dir", install_url]
-        if method == "uv":
-            print(_msg("  尝试 pip 回退...", "  Trying pip fallback..."))
         try:
             result = subprocess.run(pip_cmd, capture_output=True, text=True,
                                     encoding="utf-8", errors="replace")
@@ -167,7 +215,7 @@ def update(switch_branch: str | None = None) -> None:
                         "WinError" in stderr or "helloagents.exe" in stderr):
                     # Let the new code detect targets itself via _post_update
                     post = [[sys.executable, "-m", "helloagents.cli",
-                             "_post_update", branch]]
+                             "_post_update", branch, str(total_steps)]]
                     all_post = post + [build_pip_cleanup_cmd()]
                     if _win_deferred_pip(pip_cmd, post_cmds=all_post):
                         print(_msg(
@@ -196,7 +244,10 @@ def update(switch_branch: str | None = None) -> None:
 
     if not updated:
         print(_msg("  ✗ 更新失败。请手动执行:", "  ✗ Update failed. Try manually:"))
-        print(f"    pip install --upgrade --no-cache-dir {install_url}")
+        if method == "uv" and not allow_pip_fallback:
+            print(f"    uv tool install --from {install_url} helloagents --force")
+        else:
+            print(f"    pip install --upgrade --no-cache-dir {install_url}")
         return
 
     # Re-exec: launch a NEW process for Phase 2+3 so that the freshly
