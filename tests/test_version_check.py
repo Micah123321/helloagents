@@ -39,6 +39,10 @@ class VersionCheckTests(unittest.TestCase):
         with patch.object(vc, "_read_direct_url", return_value=direct_url):
             self.assertEqual(vc._get_repo_url(), direct_url["url"])
 
+    def test_get_repo_url_falls_back_to_maintenance_fork(self):
+        with patch.object(vc, "_read_direct_url", return_value={}):
+            self.assertEqual(vc._get_repo_url(), "https://github.com/Micah123321/helloagents.git")
+
     def test_get_repo_url_uses_origin_for_local_path_install(self):
         direct_url = {"url": "file:///E:/code/python/helloagents", "dir_info": {}}
         origin = "https://github.com/Micah123321/helloagents.git"

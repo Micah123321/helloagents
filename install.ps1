@@ -1,14 +1,14 @@
 # ─── HelloAGENTS Installer (Windows PowerShell) ───
 # Usage:
-#   irm https://raw.githubusercontent.com/hellowind777/helloagents/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/Micah123321/helloagents/dev/2.3.8/install.ps1 | iex
 #
 # Environment variables:
-#   $env:HELLOAGENTS_BRANCH  — branch to install from (default: main)
+#   $env:HELLOAGENTS_BRANCH  — branch to install from (default: dev/2.3.8)
 
 $ErrorActionPreference = "Stop"
 
-$Repo   = "https://github.com/hellowind777/helloagents"
-$Branch = if ($env:HELLOAGENTS_BRANCH) { $env:HELLOAGENTS_BRANCH } else { "main" }
+$Repo   = "https://github.com/Micah123321/helloagents"
+$Branch = if ($env:HELLOAGENTS_BRANCH) { $env:HELLOAGENTS_BRANCH } else { "dev/2.3.8" }
 
 # ─── Helpers ───
 # Locale detection: zh for Chinese, en otherwise
@@ -88,9 +88,9 @@ Write-Host (Msg "正在从分支 $Branch 安装 HelloAGENTS" "Installing HelloAG
 if ($HasUv) {
     Write-Info (Msg "使用 uv 安装..." "Installing with uv...")
     if ($Branch -eq "main") {
-        & uv tool install --force --from "git+$Repo" helloagents
+        & uv tool install --force --no-cache --from "git+$Repo" helloagents
     } else {
-        & uv tool install --force --from "git+$Repo@$Branch" helloagents
+        & uv tool install --force --no-cache --from "git+$Repo@$Branch" helloagents
     }
 } else {
     Write-Info (Msg "使用 pip 安装..." "Installing with pip...")

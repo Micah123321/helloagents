@@ -9,7 +9,8 @@ import locale
 import os
 import sys
 
-_REPO = "https://github.com/hellowind777/helloagents"
+_REPO = "https://github.com/Micah123321/helloagents.git"
+_DEFAULT_BRANCH = "dev/2.3.8"
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +84,7 @@ def _reinstall(extra_args: list[str] | None = None) -> None:
     import shutil
 
     # Extract branch from extra args (e.g. helloagents update --branch beta)
-    branch = "main"
+    branch = _DEFAULT_BRANCH
     if extra_args:
         for i, a in enumerate(extra_args):
             if a in ("--branch", "-b") and i + 1 < len(extra_args):
@@ -99,13 +100,14 @@ def _reinstall(extra_args: list[str] | None = None) -> None:
     if shutil.which("uv"):
         r = subprocess.run(
             ["uv", "tool", "install", "--from",
-             f"git+{_REPO}@{branch}", "helloagents", "--force"])
+             f"git+{_REPO}@{branch}", "helloagents",
+             "--force", "--no-cache"])
         if r.returncode == 0:
             print(_msg("重新安装成功。请重试您的命令。",
                        "Reinstall successful. Please retry your command."))
             return
 
-    pip_url = f"git+{_REPO}.git@{branch}"
+    pip_url = f"git+{_REPO}@{branch}"
     r = subprocess.run(
         [sys.executable, "-m", "pip", "install",
          "--upgrade", "--force-reinstall", "--no-cache-dir", pip_url])
@@ -113,8 +115,12 @@ def _reinstall(extra_args: list[str] | None = None) -> None:
         print(_msg("重新安装成功。请重试您的命令。",
                    "Reinstall successful. Please retry your command."))
     else:
-        print(_msg(f"重新安装失败。请手动执行:\n  pip install --upgrade --force-reinstall {pip_url}",
-                   f"Reinstall failed. Try manually:\n  pip install --upgrade --force-reinstall {pip_url}"))
+        print(_msg(
+            "重新安装失败。请手动执行:\n"
+            f"  pip install --upgrade --force-reinstall --no-cache-dir {pip_url}",
+            "Reinstall failed. Try manually:\n"
+            f"  pip install --upgrade --force-reinstall --no-cache-dir {pip_url}",
+        ))
 
 
 if __name__ == "__main__":

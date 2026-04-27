@@ -3,13 +3,13 @@ set -eu
 
 # ─── HelloAGENTS Installer (macOS / Linux) ───
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/hellowind777/helloagents/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Micah123321/helloagents/dev/2.3.8/install.sh | bash
 #
 # Environment variables:
-#   HELLOAGENTS_BRANCH  — branch to install from (default: main)
+#   HELLOAGENTS_BRANCH  — branch to install from (default: dev/2.3.8)
 
-REPO="https://github.com/hellowind777/helloagents"
-BRANCH="${HELLOAGENTS_BRANCH:-main}"
+REPO="https://github.com/Micah123321/helloagents"
+BRANCH="${HELLOAGENTS_BRANCH:-dev/2.3.8}"
 
 # ─── Colors ───
 RED='\033[0;31m'
@@ -99,9 +99,9 @@ printf "\n${BOLD}$(msg "正在从分支 ${CYAN}${BRANCH}${RESET}${BOLD} 安装 H
 if [ "$HAS_UV" = true ]; then
     info "$(msg "使用 uv 安装..." "Installing with uv...")"
     if [ "$BRANCH" = "main" ]; then
-        uv tool install --force --from "git+${REPO}" helloagents
+        uv tool install --force --no-cache --from "git+${REPO}" helloagents
     else
-        uv tool install --force --from "git+${REPO}@${BRANCH}" helloagents
+        uv tool install --force --no-cache --from "git+${REPO}@${BRANCH}" helloagents
     fi
 else
     info "$(msg "使用 pip 安装..." "Installing with pip...")"

@@ -16,7 +16,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-const REPO = "https://github.com/hellowind777/helloagents";
+const REPO = "https://github.com/Micah123321/helloagents";
+const DEFAULT_BRANCH = "dev/2.3.8";
 const MIN_PYTHON = [3, 10];
 
 function findPython() {
@@ -45,14 +46,14 @@ function detectBranch() {
     const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
     if (pkg.version && /beta/i.test(pkg.version)) return "beta";
   } catch {}
-  return "main";
+  return DEFAULT_BRANCH;
 }
 
 function pipInstall(python, branch) {
   const suffix = branch && branch !== "main" ? `@${branch}` : "";
   const url = `git+${REPO}.git${suffix}`;
   console.log(`Installing helloagents Python package (${branch})...`);
-  const res = spawnSync(python, ["-m", "pip", "install", "--upgrade", url], {
+  const res = spawnSync(python, ["-m", "pip", "install", "--upgrade", "--no-cache-dir", url], {
     stdio: "inherit",
   });
   if (res.status !== 0) {

@@ -5,10 +5,10 @@
   "description": "HelloAGENTS - multi-CLI workflow rules and installer",
   "author": "HelloWind",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/hellowind777/helloagents",
+  "homepage": "https://github.com/Micah123321/helloagents",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hellowind777/helloagents.git"
+    "url": "git+https://github.com/Micah123321/helloagents.git"
   },
   "bin": {
     "helloagents": "./bin/cli.mjs"

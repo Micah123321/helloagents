@@ -158,7 +158,7 @@ def update(switch_branch: str | None = None) -> None:
     if method == "uv":
         uv_cmd = [
             "uv", "tool", "install", "--from", install_url,
-            "helloagents", "--force",
+            "helloagents", "--force", "--no-cache",
         ]
         try:
             result = subprocess.run(uv_cmd, capture_output=True, text=True,
@@ -245,7 +245,7 @@ def update(switch_branch: str | None = None) -> None:
     if not updated:
         print(_msg("  ✗ 更新失败。请手动执行:", "  ✗ Update failed. Try manually:"))
         if method == "uv" and not allow_pip_fallback:
-            print(f"    uv tool install --from {install_url} helloagents --force")
+            print(f"    uv tool install --from {install_url} helloagents --force --no-cache")
         else:
             print(f"    pip install --upgrade --no-cache-dir {install_url}")
         return

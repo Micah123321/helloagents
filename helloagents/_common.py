@@ -20,8 +20,8 @@ from importlib.resources import files
 # Constants
 # ---------------------------------------------------------------------------
 
-REPO_URL = "https://github.com/hellowind777/helloagents"
-REPO_API_LATEST = "https://api.github.com/repos/hellowind777/helloagents/releases/latest"
+REPO_URL = "https://github.com/Micah123321/helloagents.git"
+REPO_API_LATEST = "https://api.github.com/repos/Micah123321/helloagents/releases/latest"
 
 CLI_TARGETS = {
     "codex": {"dir": ".codex", "rules_file": "AGENTS.md"},

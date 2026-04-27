@@ -73,6 +73,8 @@ class UpdaterTests(unittest.TestCase):
         run.assert_called_once()
         uv_cmd = run.call_args.args[0]
         self.assertEqual(uv_cmd[:3], ["uv", "tool", "install"])
+        self.assertIn("--force", uv_cmd)
+        self.assertIn("--no-cache", uv_cmd)
         schedule.assert_called_once()
         self.assertEqual(schedule.call_args.args[0], uv_cmd)
         post_cmds = schedule.call_args.kwargs["post_cmds"]

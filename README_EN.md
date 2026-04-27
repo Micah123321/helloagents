@@ -202,12 +202,12 @@ Additionally, HelloAGENTS provides: **five-dimension routing scoring** (action n
 
 **Install and select targets:**
 
-    uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force
+    uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force --no-cache
     helloagents
 
 **Install Codex target only:**
 
-    uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force
+    uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force --no-cache
     helloagents install codex
 
 **Verify channel:**
@@ -220,6 +220,12 @@ Expected package version: `2.3.9+m`; expected branch: `dev/2.3.8`.
 **Update:**
 
     helloagents update
+
+When `helloagents update` uses UV, it now adds `--force --no-cache` automatically to avoid reusing stale same-version wheels on the maintenance branch.
+
+**Local source reinstall (for development / verification):**
+
+    uv tool install --force --no-cache "E:\code\python\helloagents"
 
 **Uninstall:**
 
@@ -270,7 +276,7 @@ The npm package follows the npm release channel and may not install this reposit
 **First install:**
 
     # UV
-    uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force
+    uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force --no-cache
     helloagents install codex
 
     # pip
@@ -300,7 +306,7 @@ The npm package follows the npm release channel and may not install this reposit
 **First install:**
 
     # UV
-    uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force
+    uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force --no-cache
     helloagents install claude
 
     # pip
@@ -655,7 +661,7 @@ A: An experimental Claude Code feature where multiple Claude Code instances coll
 
 **Diagnosis:** Package metadata not available
 
-**Solution:** Install the package first: `uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force`
+**Solution:** Install the package first: `uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force --no-cache`
 
 **Verification:** Run `helloagents version` — should show current version number
 
@@ -739,6 +745,7 @@ A: An experimental Claude Code feature where multiple Claude Code instances coll
 - Changed maintenance-build update detection to follow the installed branch/source by default, with the 2.x/m fallback branch set to `dev/2.3.8`
 - `main` / latest 3.x releases no longer trigger default update prompts for the 2.x/m channel
 - `helloagents update <branch>` still supports explicit branch switching when users intentionally leave the maintenance channel
+- UV install and update paths now use `--force --no-cache` to avoid stale same-version wheels on the maintenance branch
 
 **Workflow Rule Improvements:**
 - Added GPT anti-pattern rules for split delivery, filler closings, and holding-back behavior

@@ -205,12 +205,12 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
 
 **安装并选择目标 CLI：**
 
-    uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force
+    uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force --no-cache
     helloagents
 
 **只安装到 Codex：**
 
-    uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force
+    uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force --no-cache
     helloagents install codex
 
 **验证维护通道：**
@@ -223,6 +223,12 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
 **更新：**
 
     helloagents update
+
+`helloagents update` 使用 UV 安装时会自动附加 `--force --no-cache`，避免同版本维护分支更新时复用旧 wheel 缓存。
+
+**本地源码重装（开发/验证时使用）：**
+
+    uv tool install --force --no-cache "E:\code\python\helloagents"
 
 **卸载：**
 
@@ -281,7 +287,7 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
 **首次安装：**
 
     # UV
-    uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force
+    uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force --no-cache
     helloagents install codex
 
     # pip
@@ -311,7 +317,7 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
 **首次安装：**
 
     # UV
-    uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force
+    uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force --no-cache
     helloagents install claude
 
     # pip
@@ -666,7 +672,7 @@ CHANGELOG 使用语义版本号（X.Y.Z），版本来源优先级：用户指�
 
 **诊断：** 包元数据不可用
 
-**解决：** 先安装包：`uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force`，或使用 pip 安装维护分支
+**解决：** 先安装包：`uv tool install --from "git+https://github.com/Micah123321/helloagents.git@dev/2.3.8" helloagents --force --no-cache`，或使用 pip 安装维护分支
 
 **验证：** 运行 `helloagents version` 应显示当前版本号
 
@@ -750,6 +756,7 @@ CHANGELOG 使用语义版本号（X.Y.Z），版本来源优先级：用户指�
 - 维护版更新检测默认跟随当前安装来源和分支；2.x/m 无显式分支时回退到 `dev/2.3.8`
 - 2.x/m 通道不再因为 `main` / 最新 3.x release 触发默认更新提示
 - `helloagents update <branch>` 仍保留显式切换分支能力
+- UV 安装和更新统一使用 `--force --no-cache`，避免同版本维护分支复用旧 wheel 缓存
 
 **工作流规则增强：**
 - 新增 GPT 反模式规则，治理拆单交付、套话收尾和留一手行为
