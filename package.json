@@ -2,7 +2,7 @@
   "name": "helloagents",
   "version": "2.3.9-m",
   "type": "module",
-  "description": "HelloAGENTS - AI-native sub-agent orchestration framework for multi-CLI environments",
+  "description": "HelloAGENTS - multi-CLI workflow rules and installer",
   "author": "HelloWind",
   "license": "Apache-2.0",
   "homepage": "https://github.com/hellowind777/helloagents",

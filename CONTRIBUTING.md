@@ -6,14 +6,14 @@ This repository is now package-first (helloagents/) and ships workflow definitio
 
 ## Documentation
 
-- English README: [README.md](./README.md)
-- 中文 README: [README_CN.md](./README_CN.md)
+- Default Chinese README: [README.md](./README.md)
+- English README: [README_EN.md](./README_EN.md)
 - License: [LICENSE](./LICENSE.md)
 
 ## Development Setup
 
     # Clone and enter repo
-    git clone https://github.com/hellowind777/helloagents.git
+    git clone https://github.com/Micah123321/helloagents.git
     cd helloagents
 
     # Optional: editable install
@@ -40,7 +40,7 @@ This repository is now package-first (helloagents/) and ships workflow definitio
 
 ## Contribution Rules
 
-- Keep README.md and README_CN.md in sync (same structure and code snippets).
+- Keep README.md and README_EN.md in sync (same structure and code snippets).
 - If you update workflow behavior, update the corresponding files in:
   - helloagents/functions/
   - helloagents/stages/

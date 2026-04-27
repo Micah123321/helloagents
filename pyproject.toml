@@ -1,7 +1,7 @@
 [project]
 name = "helloagents"
 version = "2.3.9+m"
-description = "HelloAGENTS - 自主的高级智能伙伴"
+description = "HelloAGENTS - 多 CLI 工作流规则与安装工具"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
@@ -29,5 +29,6 @@ include = [
     "AGENTS.md",
     "SKILL.md",
     "README.md",
+    "README_EN.md",
     "pyproject.toml",
 ]
