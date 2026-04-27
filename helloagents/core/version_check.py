@@ -10,7 +10,7 @@ import json
 import re
 from pathlib import Path
 from importlib.metadata import version as get_version
-from urllib.request import urlopen, Request
+from urllib.request import url2pathname, urlopen, Request
 from urllib.parse import quote, urlparse
 
 from .._common import REPO_API_LATEST, REPO_URL, CLI_TARGETS, PLUGIN_DIR_NAME
@@ -110,10 +110,60 @@ def _parse_github_repo(url: str) -> tuple[str, str] | None:
     return parts[0], parts[1].removesuffix(".git")
 
 
+def _direct_url_install_path(info: dict | None = None) -> Path | None:
+    """Resolve a local path from direct_url.json for path-based installs."""
+    url = (info or _read_direct_url()).get("url", "")
+    parsed = urlparse(url)
+    if parsed.scheme == "file":
+        path = Path(url2pathname(parsed.path))
+    elif not parsed.scheme and url:
+        path = Path(url)
+    else:
+        return None
+    try:
+        path = path.resolve()
+    except OSError:
+        return None
+    return path if path.exists() else None
+
+
+def _git_output(path: Path, *args: str) -> str:
+    """Run a small git query in a local install source."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(path), *args],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=3,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return ""
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
+def _git_remote_url(path: Path) -> str:
+    """Return the local repository origin URL for path-based installs."""
+    remote = _git_output(path, "remote", "get-url", "origin")
+    return remote if _parse_github_repo(remote) else ""
+
+
 def _get_repo_url() -> str:
     """Resolve the installed repository URL, falling back to the canonical repo."""
-    direct_url = _read_direct_url().get("url", "")
-    return _strip_git_prefix(direct_url) if _parse_github_repo(direct_url) else REPO_URL
+    info = _read_direct_url()
+    direct_url = info.get("url", "")
+    if _parse_github_repo(direct_url):
+        return _strip_git_prefix(direct_url)
+
+    install_path = _direct_url_install_path(info)
+    if install_path:
+        remote_url = _git_remote_url(install_path)
+        if remote_url:
+            return _strip_git_prefix(remote_url)
+
+    return REPO_URL
 
 
 def _detect_channel(local_ver: str | None = None) -> str:
@@ -126,7 +176,11 @@ def _detect_channel(local_ver: str | None = None) -> str:
 def _local_commit_id() -> str:
     """Get the git commit hash recorded at install time from direct_url.json."""
     info = _read_direct_url()
-    return info.get("vcs_info", {}).get("commit_id", "")
+    commit_id = info.get("vcs_info", {}).get("commit_id", "")
+    if commit_id:
+        return commit_id
+    install_path = _direct_url_install_path(info)
+    return _git_output(install_path, "rev-parse", "HEAD") if install_path else ""
 
 
 def _remote_commit_id(branch: str, repo_url: str | None = None) -> str:

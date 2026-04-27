@@ -39,6 +39,21 @@ class VersionCheckTests(unittest.TestCase):
         with patch.object(vc, "_read_direct_url", return_value=direct_url):
             self.assertEqual(vc._get_repo_url(), direct_url["url"])
 
+    def test_get_repo_url_uses_origin_for_local_path_install(self):
+        direct_url = {"url": "file:///E:/code/python/helloagents", "dir_info": {}}
+        origin = "https://github.com/Micah123321/helloagents.git"
+        with patch.object(vc, "_read_direct_url", return_value=direct_url):
+            with patch.object(vc, "_direct_url_install_path", return_value=object()):
+                with patch.object(vc, "_git_remote_url", return_value=origin):
+                    self.assertEqual(vc._get_repo_url(), origin)
+
+    def test_local_commit_id_uses_git_head_for_local_path_install(self):
+        direct_url = {"url": "file:///E:/code/python/helloagents", "dir_info": {}}
+        with patch.object(vc, "_read_direct_url", return_value=direct_url):
+            with patch.object(vc, "_direct_url_install_path", return_value=object()):
+                with patch.object(vc, "_git_output", return_value="abc123"):
+                    self.assertEqual(vc._local_commit_id(), "abc123")
+
     def test_fetch_latest_version_non_main_skips_release_api(self):
         with patch.object(vc, "_fetch_remote_version", return_value="2.3.9+m") as fetch_remote:
             with patch.object(vc, "urlopen") as urlopen:
