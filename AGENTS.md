@@ -505,9 +505,9 @@ Prohibitions (CRITICAL):
 
 | 闸门等级 | 命令 | 评估行为 | 确认行为 |
 |----------|------|----------|----------|
-| 无 | ~help, ~rlm, ~status | 无评估 | 直接执行，无需确认（破坏性子命令内部自带确认） |
-| 轻量 | ~init, ~upgradekb, ~clean, ~cleanplan, ~test, ~commit, ~review, ~validatekb, ~exec, ~rollback | 需求理解 + EHRB 检测（不评分不追问）| 输出确认信息（需求摘要+后续流程）→ ⛔ |
-| 完整 | ~auto, ~plan | 需求评估（评分+按需追问+EHRB） | 核心维度未充分→追问→⛔；全部充分→确认信息（评分+后续流程）→ ⛔ |
+| 无 | ~help, ~rlm, ~status, ~idea | 无评估 | 直接执行，无需确认（破坏性子命令内部自带确认） |
+| 轻量 | ~init, ~upgradekb, ~clean, ~cleanplan, ~test, ~commit, ~review, ~validatekb, ~exec, ~rollback, ~loop, ~wiki, ~verify | 需求理解 + EHRB 检测（不评分不追问）| 输出确认信息（需求摘要+后续流程）→ ⛔ |
+| 完整 | ~auto, ~plan, ~build, ~prd | 需求评估（评分+按需追问+EHRB） | 核心维度未充分→追问→⛔；全部充分→确认信息（评分+后续流程）→ ⛔ |
 
 **命令执行流程（CRITICAL）:**
 ```yaml
@@ -917,6 +917,12 @@ Scope: This rule applies to ALL ⛔ END_TURN marks in ALL modules, no exceptions
 | ~help | functions/help.md |
 | ~status | functions/status.md |
 | ~clean | functions/clean.md, services/knowledge.md（前置迁移检查） |
+| ~idea | functions/idea.md |
+| ~build | functions/build.md, rules/tools.md |
+| ~prd | functions/prd.md |
+| ~loop | functions/loop.md |
+| ~wiki | functions/wiki.md, services/templates.md, services/knowledge.md |
+| ~verify | functions/verify.md, services/package.md |
 | ~rlm spawn | rlm/roles/{role}.md |
 | 调用脚本时 | rules/tools.md（脚本执行规范与降级处理） |
 | 子代理调度（模块文件中遇到 `[→ G10]` 或 `[RLM:角色名]` 标记时） | rules/subagent-protocols.md（通用协议）+ 按当前 CLI 加载: Claude Code → rules/subagent-claude.md, Codex CLI → rules/subagent-codex.md, 其他 → rules/subagent-other.md |
