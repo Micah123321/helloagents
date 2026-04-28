@@ -8,10 +8,10 @@
 
 **Let AI go beyond analysis — keep pushing until implementation and verification are done.**
 
-[![Version](https://img.shields.io/badge/version-2.3.9--m-orange.svg)](./pyproject.toml)
+[![Version](https://img.shields.io/badge/version-2.4.0-orange.svg)](./pyproject.toml)
 [![npm](https://img.shields.io/npm/v/helloagents.svg)](https://www.npmjs.com/package/helloagents)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB.svg)](./pyproject.toml)
-[![Commands](https://img.shields.io/badge/commands-15-6366f1.svg)](./helloagents/functions)
+[![Commands](https://img.shields.io/badge/commands-21-6366f1.svg)](./helloagents/functions)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE.md)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
@@ -215,7 +215,7 @@ Additionally, HelloAGENTS provides: **five-dimension routing scoring** (action n
     helloagents version --force --cache-ttl 0
     helloagents status
 
-Expected package version: `2.3.9+m`; expected branch: `dev/2.3.8`.
+Expected package version: `2.4.0`; expected branch: `dev/2.3.8`.
 
 **Update:**
 
@@ -432,6 +432,7 @@ These commands run inside AI chat, not your system shell.
 | ~auto | full autonomous workflow |
 | ~plan | planning and package generation |
 | ~exec | execute existing package |
+| ~build | smart build (execute package if exists, otherwise route by need) |
 | ~init | initialize knowledge base |
 | ~commit | generate commit message from context |
 | ~status / ~help | status and help |
@@ -442,14 +443,24 @@ These commands run inside AI chat, not your system shell.
 |---|---|
 | ~test | run project tests |
 | ~review | code review |
+| ~verify | review + verify + auto-fix + wrap-up (~review superset) |
 | ~validatekb | validate knowledge base |
+| ~loop | iterative improvement until quality target is met |
+
+**Product & Exploration:**
+
+| Command | Purpose |
+|---|---|
+| ~idea | lightweight tech exploration and direction comparison (read-only) |
+| ~prd | interactive product requirements document generation |
 
 **Advanced Features:**
 
 | Command | Purpose |
 |---|---|
+| ~wiki | KB creation and sync (~init KB subset) |
 | ~upgradekb | upgrade knowledge structure |
-| ~clean / ~cleanplan | cleanup workflow artifacts |
+| ~clean / ~cleanplan | cleanup and archive workflow artifacts |
 | ~rollback | rollback workflow state |
 | ~rlm | role orchestration (spawn / agents / resume / team) |
 
@@ -462,8 +473,9 @@ These commands run inside AI chat, not your system shell.
 | `~auto` | Full autonomous flow from requirement to verified implementation (Evaluate → Design → Develop → Verify) | Clear requirement, want end-to-end delivery |
 | `~plan` | Planning only, generates a proposal package then stops — no code written | Want to review the plan before committing |
 | `~exec` | Skip evaluation and design, execute an existing plan package directly | After `~plan` review, ready to implement |
+| `~build` | Smart entry: executes package if one exists, otherwise routes by need | Unified entry point regardless of package state |
 
-Typical pattern: `~plan` first → review → `~exec` to implement. Or just `~auto` for one-shot delivery.
+Typical pattern: `~plan` first → review → `~exec` to implement. Or just `~auto` for one-shot delivery, or `~build` to auto-detect.
 
 ### Interactive vs Delegated Mode
 
@@ -491,6 +503,14 @@ In the R2 standard path, the design stage dispatches 3–6 sub-agents to indepen
 - Interactive mode: user selects a proposal or requests re-generation (max 1 retry)
 - Delegated mode: recommended proposal is auto-selected
 - R2 standard path: complex tasks go through multi-proposal comparison; simple tasks skip it and go directly to planning
+
+### Lightweight Design Path
+
+When an R2 task meets all of the following conditions, it automatically enters the lightweight path, skipping package creation:
+
+- TASK_COMPLEXITY = simple, affected files ≤ 3, estimated changes ≤ 30 lines
+
+Lightweight behavior: skips proposal.md / tasks.md creation, outputs a ≤200-word solution summary, then enters DEVELOP directly with main agent execution (no sub-agent dispatch), using R1-level acceptance criteria. Falls back to the standard path if conditions aren't met.
 
 ### Auto Dependency Management
 
@@ -522,6 +542,37 @@ During development, the system auto-detects the project's package manager via lo
 - Shows file list before staging, supports exclusion
 - Options: local commit only / commit + push / commit + push + create PR
 - Bilingual commit messages when `BILINGUAL_COMMIT=1`
+
+### Iterative Improvement (~loop)
+
+Set a quality target and guard command (e.g., "test coverage >= 80%"), and the system automatically loops improve→verify until the target is met:
+
+- Each round: apply improvements → run verification command → check target
+- Stops when target is met, max rounds reached (default 5), or 2 consecutive rounds show no progress
+- Supports per-round rollback (reverts changes on verification failure)
+- Use cases: "increase test coverage to 90%", "fix all lint errors"
+
+### Tech Exploration (~idea)
+
+Read-only lightweight analysis — no file writes, no code changes, no package creation:
+
+- Compares 2–4 technical directions, evaluating feasibility, risk, and ecosystem compatibility
+- Use cases: quick evaluation before tech choices, "would this approach work?" questions
+- Outputs multi-direction comparison table + recommended direction
+
+### Product Requirements Document (~prd)
+
+Interactive structured PRD generation, discussing each dimension (product overview, feature scope, user scenarios, technical constraints, acceptance criteria) one round at a time. Outputs a complete PRD to the `plan/` directory. Supports interactive and fully delegated modes.
+
+### Comprehensive Verification (~verify)
+
+Superset of `~review`, covering review → verify → auto-fix → wrap-up:
+
+- Code review (Critical/Warning/Info severity grading)
+- Run lint/type checks/tests/build
+- Auto-fix on failure (max 3 rounds)
+- Generate verification report + write to CHANGELOG
+- Auto-detects recent changes when called without arguments
 
 ### Manual Sub-Agent Invocation
 
@@ -589,11 +640,11 @@ Maintenance builds marked with `+m` / `-m` (for example `2.3.9-m`, Python metada
 
 - AGENTS.md: router and workflow protocol
 - SKILL.md: skill discovery metadata for CLI targets
-- pyproject.toml: package metadata (v2.3.9+m)
+- pyproject.toml: package metadata (v2.4.0)
 - helloagents/cli.py: CLI entry point
 - helloagents/_common.py: shared constants and utilities
 - helloagents/core/: CLI management modules (install, uninstall, update, status, dispatcher, hooks settings)
-- helloagents/functions: command definitions (15)
+- helloagents/functions: command definitions (21)
 - helloagents/stages: design, develop
 - helloagents/services: knowledge, package, memory and support services
 - helloagents/rules: state, cache, tools, scaling, sub-agent protocols
@@ -738,7 +789,36 @@ A: An experimental Claude Code feature where multiple Claude Code instances coll
 
 ## Version History
 
-### v2.3.9-m (current)
+### v2.4.0 (current)
+
+**6 New Workflow Commands (total 15→21):**
+- `~idea`: Lightweight tech exploration and comparison, read-only analysis (no file writes, no plan packages), ideal for quick evaluation before technology decisions
+- `~build`: Superset of `~exec` — executes plan packages when available, routes to on-demand implementation when not, serving as a unified build entry point
+- `~prd`: Interactive structured PRD (Product Requirements Document) generation, discusses each dimension then outputs a complete PRD to `plan/` directory
+- `~loop`: Iterative improvement — sets quality metrics + guard commands, then auto-loops execute→verify until targets are met or max rounds reached
+- `~wiki`: Pure knowledge base management (KB subset of `~init`), handles only KB creation/sync without rules or skills linking
+- `~verify`: Superset of `~review`, covering review → run verification → auto-fix (up to 3 rounds) → generate report + write to CHANGELOG
+
+**Lightweight Execution Paths:**
+- Added R1 quick-judge anchors: three patterns (known-location single edit, known-command execution, known-pattern copy) enable fast R1 determination, reducing simple tasks being misrouted to R2
+- Added LIGHTWEIGHT_DESIGN path: when R2 simple tasks involve ≤3 files and ≤30 lines of changes, skip plan package creation and enter DEVELOP directly with a lightweight proposal summary, reducing process overhead for small tasks
+
+**~clean Command Expansion:**
+- Upgraded to "clean & archive" — added plan package archival capability: scans completed packages and migrates them to `archive/YYYY-MM/` via `migrate_package.py` (instead of direct deletion)
+- More granular user options: clean all + archive, cache only, archive packages only, selective processing
+
+**Workflow Rule Improvements:**
+- Added GPT anti-pattern rules for split delivery, filler closings, and holding-back behavior
+- Added quality baselines for output standards, language style, technical choice, silent failure prevention, blocking criteria, and UI acceptance
+- Added frontend copy sanitization rules: prohibit writing functional descriptions or product copy in component attributes (title/subtitle/description/tooltip, etc.), enforced across sub-agent prompt templates, develop stage instructions, reviewer checklist, and project guidelines template
+- Backported the first batch of planning-design improvements: evidence-driven assumptions, option tradeoffs, validation strategy, and richer plan templates
+
+**Testing & Infrastructure:**
+- Added 3 test files: updater Windows lock file handling, CLI recovery paths, version check multi-format parsing
+- Install scripts (install.sh / install.ps1) default to maintenance branch, support `HELLOAGENTS_BRANCH` environment variable override
+- CONTRIBUTING.md updated to package-first structure declaration
+
+### v2.3.9-m
 
 **Maintenance Channel:**
 - Published the 2.x/m maintenance build as `v2.3.9-m` while keeping Python package metadata PEP 440-compatible as `2.3.9+m`
@@ -750,6 +830,7 @@ A: An experimental Claude Code feature where multiple Claude Code instances coll
 **Workflow Rule Improvements:**
 - Added GPT anti-pattern rules for split delivery, filler closings, and holding-back behavior
 - Added quality baselines for output standards, language style, technical choice, silent failure prevention, blocking criteria, and UI acceptance
+- Added frontend copy sanitization rules: prohibit writing functional descriptions or product copy in component attributes (title/subtitle/description/tooltip, etc.), enforced across sub-agent prompt templates, develop stage instructions, reviewer checklist, and project guidelines template
 - Backported the first batch of planning-design improvements: evidence-driven assumptions, option tradeoffs, validation strategy, and richer plan templates
 
 ### v2.3.8
