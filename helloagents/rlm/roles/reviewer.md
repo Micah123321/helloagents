@@ -59,6 +59,7 @@
 - [ ] 辅助功能标注覆盖（Web: alt/aria; 原生: accessibility label）
 - [ ] 键盘/手势导航可用，对比度 ≥ 4.5:1
 - [ ] 多尺寸适配逻辑合理
+- [ ] 前端文案净化: 组件属性（title/subtitle/description/tooltip/placeholder/aria-label）中无功能说明、产品描述或开发者注释性文本，仅有简洁 UI 标签（≤8字）
 
 ## 输出格式
 
