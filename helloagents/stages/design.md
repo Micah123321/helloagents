@@ -185,8 +185,21 @@ KB_SKIPPED=false → 知识库优先，不足则扫描项目现有资源
 
 | 模式 | 特点 | 流程 | 子代理（概述，实际调用见各步骤） |
 |------|------|------|--------|
+| TASK_COMPLEXITY=simple（轻量） | 跳过方案包创建，输出轻量方案摘要 | → 轻量 DEVELOP | 无 |
 | TASK_COMPLEXITY=simple/moderate | 跳过多方案对比，但必须记录唯一方案取舍 | → 步骤11 | 主代理直接填充方案包（步骤11） |
 | TASK_COMPLEXITY=complex | 复杂任务多方案对比 | → 步骤8-13 | [RLM:brainstormer] 构思方案（步骤10）+ 主代理评估对比（步骤10）+ 主代理填充方案包（步骤11） |
+
+```yaml
+TASK_COMPLEXITY=simple 轻量路径:
+  条件: TASK_COMPLEXITY=simple 且 涉及文件≤3 且 预估总改动行≤30
+  行为:
+    - 跳过 create_package.py、proposal.md、tasks.md、validate_package.py
+    - 在 DESIGN 阶段输出轻量方案摘要（需求+方案+风险+验证方式，≤200字）
+    - 设置 LIGHTWEIGHT_DESIGN = true
+    - 直接进入 DEVELOP（不创建 CREATED_PACKAGE）
+  回退: 条件不满足（文件>3 或 改动>30行）→ 走现有 simple/moderate 路径（创建方案包）
+  KB同步: LIGHTWEIGHT_DESIGN=true 时 KB 同步降级为 R1 规则（CHANGELOG 快速修改分类）
+```
 
 #### 步骤8: 准备工作（仅 TASK_COMPLEXITY=complex）
 

@@ -451,6 +451,20 @@ Prohibitions (CRITICAL):
     - 任一维度命中 R2 → 整体为 R2
     - 全部为 R1 → 整体为 R1
     - EHRB 命中 → 强制 R2
+  R1 快判锚点（AI 校准用，匹配任一模式即可快速判定 R1）:
+    模式A — 已知位置单点修改:
+      特征: 用户指定了具体文件 + 修改位置可从描述直接确定 + 改动为增删改≤5行
+      典型: "在 X 文件的 Y 位置加一行 Z"、"把 A 文件里的 B 改成 C"、"删除 X 文件的 Y 行"
+    模式B — 已知命令执行:
+      特征: 用户要求执行一条具体命令或运行一个脚本 + 无需选择参数
+      典型: "运行 npm test"、"执行 migrate"、"格式化 src/ 目录"
+    模式C — 已知模式复制:
+      特征: 参照已有代码/配置添加同类项 + 不改变架构
+      典型: "像 X 一样加一个 Y"、"在现有列表里追加 Z"
+    校准原则:
+      - 匹配锚点 = 强信号 R1，仍需逐维度确认（防止 EHRB 漏检）
+      - 不匹配锚点 ≠ 一定是 R2，继续正常维度判定
+      - 锚点仅辅助 AI 校准判定阈值，不改变维度判定规则本身
 ```
 
 ```yaml
@@ -809,6 +823,7 @@ TASK_COMPLEXITY: 未设置 | simple | moderate | complex  # DESIGN Phase1步骤3
 
 # ─── 知识库与方案包变量 ───
 KB_SKIPPED: 未设置 | true  # R1强制true，DESIGN Phase1按KB_CREATE_MODE判定
+LIGHTWEIGHT_DESIGN: false  # DESIGN Phase2 simple 轻量路径设为 true，DEVELOP 按精简流程执行
 CREATED_PACKAGE: 空  # DESIGN 阶段设置
 CURRENT_PACKAGE: 空  # DEVELOP 阶段确定
 ```
@@ -843,7 +858,7 @@ Scope: This rule applies to ALL ⛔ END_TURN marks in ALL modules, no exceptions
 ```yaml
 任务重置:
   触发: 单个任务完成/取消
-  重置: CURRENT_STAGE, STAGE_ENTRY_MODE, KB_SKIPPED, TASK_COMPLEXITY, CREATED_PACKAGE, CURRENT_PACKAGE, ROUTING_LEVEL
+  重置: CURRENT_STAGE, STAGE_ENTRY_MODE, KB_SKIPPED, LIGHTWEIGHT_DESIGN, TASK_COMPLEXITY, CREATED_PACKAGE, CURRENT_PACKAGE, ROUTING_LEVEL
   保留: WORKFLOW_MODE, DELEGATION_INTERRUPTED
 完整重置:
   触发: 命令完成、用户取消、流程结束、错误终止
