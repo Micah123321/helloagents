@@ -128,6 +128,10 @@ notify 钩子在所有代理轮次触发（含子代理），codex_notify.py 声
   无【HelloAGENTS】标记 → 跳过声音（覆盖子代理输出和主代理无格式中间输出）
   有【HelloAGENTS】标记 → 仅从输出末尾提取最后一个 G3 状态行的图标进行声音路由，忽略输出中间的历史标记
 
+### 安全边界
+
+Codex CLI 当前没有等效 Claude Code 的 `PreToolUse(Bash)` 执行前危险命令 Hook。HelloAGENTS 在 Codex 下依赖 `developer_instructions` 路由确认、父→子审批传播、只读角色 `config_file` 和主代理 EHRB 规则；这些属于规则/配置边界，不等同于执行前命令级技术拦截。
+
 ### 多代理配置
 
 通过 `/agent` 命令（v0.110+）或 `/experimental` 开启:

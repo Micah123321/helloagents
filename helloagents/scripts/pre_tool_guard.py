@@ -3,7 +3,7 @@
 """
 HelloAGENTS PreToolUse Guard — 危险命令安全防护
 
-匹配 Bash 工具调用中的高危命令模式，匹配时返回 deny 决策阻止执行。
+匹配工具调用中的高危命令模式，匹配时返回 deny 决策阻止执行。
 无匹配时 exit(0) 不输出 = 放行。
 
 输入(stdin): JSON，包含 tool_name, tool_input 等字段
@@ -31,26 +31,89 @@ if sys.platform == 'win32':
 # 危险命令模式
 # ---------------------------------------------------------------------------
 
+def _danger(pattern: str, reason: str, flags: int = re.IGNORECASE) -> tuple[re.Pattern, str]:
+    """Create a dangerous command pattern.
+
+    Args:
+        pattern: Regular expression matched against the shell command string.
+        reason: Human-readable reason returned when the pattern matches.
+        flags: Regular expression flags.
+
+    Returns:
+        A compiled pattern and its denial reason.
+    """
+    return re.compile(pattern, flags), reason
+
+
+COMMAND_BOUNDARY = r'(?=$|[\n;&|])'
+
 DANGEROUS_PATTERNS: list[tuple[re.Pattern, str]] = [
-    # 递归删除根/家/通配
-    (re.compile(r'\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\s+(/(?:\s|$)|\*(?:\s|$)|~(?:\s|/|$))', re.IGNORECASE),
-     "递归删除危险路径 (rm -rf / | ~ | *)"),
-    # 强推主分支
-    (re.compile(r'\bgit\s+push\s+.*--force.*\b(main|master)\b', re.IGNORECASE),
-     "强制推送到主分支 (git push --force main/master)"),
-    (re.compile(r'\bgit\s+push\s+-f\s+.*\b(main|master)\b', re.IGNORECASE),
-     "强制推送到主分支 (git push -f main/master)"),
-    # 硬重置到远程主分支
-    (re.compile(r'\bgit\s+reset\s+--hard\s+origin/(main|master)\b', re.IGNORECASE),
-     "硬重置到远程主分支 (git reset --hard origin/main)"),
-    # 数据库删除
-    (re.compile(r'\bDROP\s+(DATABASE|TABLE|SCHEMA)\b', re.IGNORECASE),
-     "数据库删除操作 (DROP DATABASE/TABLE/SCHEMA)"),
-    # 格式化/原始设备写入
-    (re.compile(r'\bmkfs\b', re.IGNORECASE),
-     "文件系统格式化 (mkfs)"),
-    (re.compile(r'\bdd\s+.*\bof=/dev/', re.IGNORECASE),
-     "原始设备写入 (dd of=/dev/)"),
+    # 文件/目录删除：Shell、PowerShell、CMD、Git、Python 常见入口
+    _danger(
+        rf'\brm\s+(?!--?(?:help|version)\b)(?:-[^\s]+\s+|--[^\s]+\s+)*[^\s;&|]+',
+        "Shell 文件删除命令 (rm)"
+    ),
+    _danger(
+        rf'\b(?:Remove-Item|del|erase)\b(?!--?(?:help|version)\b)[^\n;&|]*{COMMAND_BOUNDARY}',
+        "PowerShell/CMD 文件删除命令 (Remove-Item/del/erase)"
+    ),
+    _danger(
+        rf'\b(?:rmdir|rd)\b(?!--?(?:help|version)\b)[^\n;&|]*{COMMAND_BOUNDARY}',
+        "目录删除命令 (rmdir/rd)"
+    ),
+    _danger(
+        r'\bgit\s+rm\b[^\n;&|]*',
+        "Git 文件删除命令 (git rm)"
+    ),
+    _danger(
+        r'\bgit\s+clean\b(?=[^\n;&|]*(?:-[A-Za-z]*f[A-Za-z]*\b|--force\b))[^\n;&|]*',
+        "Git 未跟踪文件清理 (git clean --force)"
+    ),
+    _danger(
+        r'\b(?:python|python3|py)\b[\s\S]*\b(?:shutil\.rmtree|os\.(?:remove|unlink|rmdir)|(?:pathlib\.)?Path\([^)]*\)\.(?:unlink|rmdir))\s*\(',
+        "Python 文件删除调用 (shutil.rmtree/os.remove/Path.unlink)",
+        re.IGNORECASE | re.DOTALL
+    ),
+    _danger(
+        r'\bfind\b[^\n;&|]*\s-delete\b',
+        "find -delete 文件删除命令"
+    ),
+    # 强推/硬重置
+    _danger(
+        r'\bgit\s+push\b(?=[^\n;&|]*(?:--force|-f)\b)(?=[^\n;&|]*\b(?:main|master)\b)[^\n;&|]*',
+        "强制推送到主分支 (git push --force main/master)"
+    ),
+    _danger(
+        r'\bgit\s+reset\s+--hard\s+\S+/(main|master)\b',
+        "硬重置到远程主分支 (git reset --hard origin/main)"
+    ),
+    # 数据库删除/无条件删除
+    _danger(
+        r'\bDROP\s+(DATABASE|TABLE|SCHEMA)\b',
+        "数据库删除操作 (DROP DATABASE/TABLE/SCHEMA)"
+    ),
+    _danger(
+        r'\bDELETE\s+FROM\b(?:(?!\bWHERE\b|;)[\s\S])*(?:;|$)',
+        "无 WHERE 条件的数据删除 (DELETE FROM)",
+        re.IGNORECASE | re.DOTALL
+    ),
+    # 缓存清空、权限过度开放、格式化/原始设备写入
+    _danger(
+        r'\b(?:FLUSHALL|FLUSHDB)\b|\bcache\s+(?:purge|flush)\b',
+        "缓存清空命令 (FLUSHALL/FLUSHDB/cache purge/cache flush)"
+    ),
+    _danger(
+        r'\bchmod\s+(?:-[A-Za-z]+\s+)?777\b',
+        "过度开放权限 (chmod 777)"
+    ),
+    _danger(
+        r'\bmkfs(?:\.\w+)?\b',
+        "文件系统格式化 (mkfs)"
+    ),
+    _danger(
+        r'\bdd\s+.*\bof=/dev/',
+        "原始设备写入 (dd of=/dev/)"
+    ),
 ]
 
 
@@ -72,7 +135,9 @@ def main():
         sys.exit(0)
 
     tool_input = data.get("tool_input", {})
-    command = tool_input.get("command", "") if isinstance(tool_input, dict) else ""
+    command = ""
+    if isinstance(tool_input, dict):
+        command = tool_input.get("command") or tool_input.get("cmd") or ""
     if not command:
         sys.exit(0)
 

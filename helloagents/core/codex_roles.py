@@ -6,6 +6,11 @@ from pathlib import Path
 from .._common import _msg
 
 
+_READ_ONLY_ROLES = {"explorer", "monitor", "reviewer", "brainstormer"}
+_ROLE_CONFIG_DIR = "agents"
+_ROLE_CONFIG_PREFIX = "helloagents-readonly"
+
+
 # ---------------------------------------------------------------------------
 # TOML section helpers (used by role management)
 # ---------------------------------------------------------------------------
@@ -13,6 +18,62 @@ from .._common import _msg
 def _toml_str_array(arr: list[str]) -> str:
     """Format a list of strings as a TOML inline array."""
     return "[" + ", ".join(f'"{s}"' for s in arr) + "]"
+
+
+def _role_config_relpath(role: str) -> str:
+    """Return the managed Codex role config path for a read-only role.
+
+    Args:
+        role: Codex agent role name.
+
+    Returns:
+        A path relative to the Codex config directory.
+    """
+    return f"{_ROLE_CONFIG_DIR}/{_ROLE_CONFIG_PREFIX}-{role}.toml"
+
+
+def _readonly_role_config(role: str) -> str:
+    """Build a read-only Codex role config.
+
+    Args:
+        role: Codex agent role name.
+
+    Returns:
+        TOML content for the role-specific config file.
+    """
+    return f'''# Managed by HelloAGENTS. Do not edit by hand.
+sandbox_mode = "read-only"
+
+developer_instructions = """
+You are the HelloAGENTS {role} sub-agent.
+This role is read-only: inspect, analyze, and report only.
+Do not create, edit, move, rename, or delete files.
+Do not run shell commands that modify files, Git state, packages, caches, services, or external systems.
+If the task requires a write or destructive action, report it as blocked instead of attempting it.
+"""
+'''
+
+
+def _write_readonly_role_configs(dest_dir: Path) -> list[str]:
+    """Write managed read-only configs for Codex roles.
+
+    Args:
+        dest_dir: Codex configuration directory.
+
+    Returns:
+        Role names whose config files were created or changed.
+    """
+    changed: list[str] = []
+    for role in sorted(_READ_ONLY_ROLES):
+        relpath = _role_config_relpath(role)
+        config_path = dest_dir / relpath
+        content = _readonly_role_config(role)
+        if config_path.exists() and config_path.read_text(encoding="utf-8") == content:
+            continue
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(content, encoding="utf-8")
+        changed.append(role)
+    return changed
 
 
 def _get_section_scope(content: str, section_name: str) -> tuple[int, int] | None:
@@ -87,8 +148,8 @@ def _find_agents_group_end(content: str) -> int:
 #
 # Each role is registered as a distinct agent_type in config.toml, so
 # spawn_agent(agent_type="{role}") picks up the correct nickname_candidates.
-# Sub-agent routing exemption is handled by the parent developer_instructions
-# (see codex_config.py) — no per-role config_file override needed.
+# Read-only roles also receive a role-specific config_file that sets
+# sandbox_mode="read-only" to keep role capability aligned with prompts.
 _HA_AGENT_ROLES: list[tuple[str, dict]] = [
     ("explorer", {
         "description": "Codebase exploration and dependency analysis",
@@ -149,6 +210,12 @@ def _configure_codex_agent_roles(dest_dir: Path) -> None:
                 f'"{cfg["description"]}"')
             role_changed = role_changed or changed
 
+            if role in _READ_ONLY_ROLES:
+                content, changed = _upsert_key_in_section(
+                    content, section_name, "config_file",
+                    f'"{_role_config_relpath(role)}"')
+                role_changed = role_changed or changed
+
             if role_changed:
                 updated.append(role)
         else:
@@ -158,6 +225,8 @@ def _configure_codex_agent_roles(dest_dir: Path) -> None:
                 f'description = "{cfg["description"]}"',
                 f'nickname_candidates = {_toml_str_array(cfg["nickname_candidates"])}',
             ]
+            if role in _READ_ONLY_ROLES:
+                lines.append(f'config_file = "{_role_config_relpath(role)}"')
             section_text = "\n".join(lines)
 
             insert_pos = _find_agents_group_end(content)
@@ -170,6 +239,8 @@ def _configure_codex_agent_roles(dest_dir: Path) -> None:
                 content = before + "\n\n" + section_text + "\n"
 
             created.append(role)
+
+    config_updates = _write_readonly_role_configs(dest_dir)
 
     if created or updated:
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -186,16 +257,25 @@ def _configure_codex_agent_roles(dest_dir: Path) -> None:
         print(_msg(
             f"  已配置子代理角色: {', '.join(cn_parts)} ({', '.join(all_roles)})",
             f"  Configured agent roles: {', '.join(en_parts)} ({', '.join(all_roles)})"))
+        if config_updates:
+            print(_msg(
+                f"  已配置只读子代理权限: {', '.join(config_updates)}",
+                f"  Configured read-only agent permissions: {', '.join(config_updates)}"))
     else:
-        print(_msg("  子代理角色配置已是最新",
-                    "  Agent roles config is up to date"))
+        if config_updates:
+            print(_msg(
+                f"  已配置只读子代理权限: {', '.join(config_updates)}",
+                f"  Configured read-only agent permissions: {', '.join(config_updates)}"))
+        else:
+            print(_msg("  子代理角色配置已是最新",
+                        "  Agent roles config is up to date"))
 
 def _remove_codex_agent_roles(dest_dir: Path) -> bool:
     """Remove HelloAGENTS-managed agent role sections from config.toml.
 
     Only removes sections for known HA roles; user-defined roles are preserved.
-    Also cleans up legacy role TOML config files if present.
-    Returns True if any sections were removed.
+    Also cleans up managed and legacy role TOML config files if present.
+    Returns True if any sections or managed files were removed.
     """
     config_path = dest_dir / "config.toml"
     removed_sections = False
@@ -220,6 +300,22 @@ def _remove_codex_agent_roles(dest_dir: Path) -> bool:
                 f"  已移除 {len(removed)} 个子代理角色定义 ({', '.join(removed)})",
                 f"  Removed {len(removed)} agent role definition(s) ({', '.join(removed)})"))
             removed_sections = True
+
+    # Clean up managed read-only role config files.
+    agents_dir = dest_dir / _ROLE_CONFIG_DIR
+    if agents_dir.exists():
+        removed_files = False
+        for role in _READ_ONLY_ROLES:
+            config_path = dest_dir / _role_config_relpath(role)
+            if config_path.exists():
+                config_path.unlink()
+                removed_files = True
+        try:
+            if not any(agents_dir.iterdir()):
+                agents_dir.rmdir()
+        except OSError:
+            pass
+        removed_sections = removed_sections or removed_files
 
     # Clean up legacy role TOML config files (from older versions)
     roles_dir = dest_dir / "roles"

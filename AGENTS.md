@@ -173,7 +173,9 @@ PowerShell 语法规范（仅在 Bash 不可用时使用）:
   - 部署/推送到 prod/production/live 环境（如 deploy --env production, git push origin production）
   - 直连生产数据库的查询/修改操作
 破坏性命令（与 pre_tool_guard.py 对齐）:
-  - rm -rf /（根路径/家目录/通配符递归删除）
+  - Shell/PowerShell/CMD 文件或目录删除（rm/Remove-Item/del/rmdir/rd 等）
+  - Git 删除或清理（git rm/git clean -fdx 等）
+  - Python 内联删除（shutil.rmtree/os.remove/os.unlink/Path.unlink 等）
   - git push --force/-f main/master（强推主分支）
   - git reset --hard origin/main|master（硬重置到远程主分支）
   - DROP DATABASE/TABLE/SCHEMA（数据库删除）

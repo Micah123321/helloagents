@@ -103,7 +103,7 @@ Every input is scored on five dimensions and routed to R0 direct response, R1 fa
 
 **Three-Layer Safety Detection (EHRB)**
 
-Keyword scan, semantic analysis, and tool-output inspection catch destructive operations before execution. Interactive and delegated modes enforce user confirmation.
+Keyword scan, semantic analysis, and tool-output inspection identify destructive operations before execution. CLIs with PreToolUse support block typical dangerous commands through hooks; Codex CLI currently has no pre-execution dangerous-command hook and relies on routing confirmation, approval propagation, and read-only role configs.
 
 **Your gain:** safer defaults with zero-config protection.
 </td>
@@ -172,6 +172,7 @@ Additionally, HelloAGENTS provides: **five-dimension routing scoring** (action n
 - Configure `developer_instructions` for routing protocol priority
 - Enable `enable_fanout` for CSV batch orchestration (v0.110+)
 - Configure `nickname_candidates` for agent role identification
+- Configure read-only role configs for read-only sub-agents; Codex CLI currently does not provide a PreToolUse dangerous-command hook
 - Configure CSV batch processing if using parallel workflows
 
 **Claude Code Setup:**
@@ -417,7 +418,7 @@ Ask all clarification questions at once (max 2 rounds) instead of progressive mo
 2. **Smart Routing** — Every input is auto-scored; simple queries get direct answers, complex tasks enter structured workflow
 3. **Stage Progression** — Complex tasks advance through "Evaluate → Design → Develop" stages, each with clear deliverables
 4. **Auto Orchestration** — System dispatches sub-agents and specialized roles based on complexity, parallelizes when possible
-5. **Safety Guard** — Each step scans for destructive operations, risky actions require user confirmation
+5. **Safety Guard** — Each step scans for destructive operations, risky actions require user confirmation, and CLIs with PreToolUse support block typical dangerous commands before execution
 6. **Memory Retention** — User preferences, project knowledge, session context persist across sessions
 7. **Verified Completion** — Stage chain completes with verified output, auto-syncs knowledge base
 
@@ -683,7 +684,7 @@ A: Yes. The project knowledge base is stored in the project-local `.helloagents/
 
 **Q: What are Hooks?**
 
-A: Lifecycle hooks auto-deployed during installation. Claude Code gets 11 event hooks (safety checks, dangerous command guard, progress snapshots, KB sync, sound notifications, tool failure recovery, etc.); Codex CLI gets a notify hook for update and sound notifications; Gemini CLI gets 6 hooks (context injection, progress snapshots, sound notifications, pre-compression snapshots); Grok CLI gets 3 hooks (context injection, safety guard, progress snapshots). All optional — features degrade gracefully when hooks aren't available. No manual configuration needed.
+A: Lifecycle hooks auto-deployed during installation. Claude Code gets 11 event hooks (safety checks, dangerous command guard, progress snapshots, KB sync, sound notifications, tool failure recovery, etc.); Codex CLI gets a notify hook for update and sound notifications, but currently has no pre-execution dangerous-command hook; Gemini CLI gets 6 hooks (context injection, progress snapshots, sound notifications, pre-compression snapshots); Grok CLI gets 3 hooks (context injection, safety guard, progress snapshots). All optional — features degrade gracefully when hooks aren't available. No manual configuration needed.
 
 **Q: What is Agent Teams?**
 

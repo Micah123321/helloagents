@@ -45,7 +45,7 @@ notify = ["helloagents --check-update --silent"]
 
 # [agents.reviewer]
 # description = "Code review and quality inspection"
-# config_file = ".codex/agents/reviewer.md"
+# config_file = "agents/helloagents-readonly-reviewer.toml"
 # model = "<主力模型名>"
 # model_reasoning_effort = "high"
 # nickname_candidates = ["Inspector", "Sentinel", "Auditor"]

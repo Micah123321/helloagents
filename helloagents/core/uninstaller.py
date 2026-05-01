@@ -216,7 +216,7 @@ def _uninstall_codex_extras(dest_dir: Path) -> list[str]:
                    f"  ⚠ Error removing tui.notification_method: {e}"))
     try:
         if _remove_codex_agent_roles(dest_dir):
-            removed.append("agent role definitions (config.toml)")
+            removed.append("agent role definitions/configs (config.toml, agents/)")
     except Exception as e:
         print(_msg(f"  ⚠ 移除子代理角色定义时出错: {e}",
                    f"  ⚠ Error removing agent role definitions: {e}"))
