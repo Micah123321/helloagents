@@ -337,7 +337,7 @@ Customize workflow behavior via `~/.helloagents/helloagents.json` after installa
 | `EVAL_MODE` | int | `1` | Clarification mode: `1`=progressive (1 question/round, max 4), `2`=one-shot (all at once, max 2) |
 | `UPDATE_CHECK` | int | `72` | Update check cache TTL in hours: `0`=OFF |
 | `CSV_BATCH_MAX` | int | `16` | CSV batch max concurrency: `0`=OFF, cap 64 (Codex CLI only) |
-| `notify_level` | int | `0` | Notification mode: `0`=OFF, `1`=desktop, `2`=sound, `3`=desktop+sound |
+| `NOTIFY_LEVEL` | int | `2` | Notification mode: `0`=OFF, `1`=desktop, `2`=sound, `3`=desktop+sound; legacy `notify_level` is still supported |
 
 **Example:**
 

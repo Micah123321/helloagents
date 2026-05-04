@@ -138,6 +138,16 @@ def clean_stale_files(dest_dir: Path, current_rules_file: str) -> list[str]:
 # Global config creation
 # ---------------------------------------------------------------------------
 
+def _looks_like_old_default_config(data: dict) -> bool:
+    """Return whether a config still matches the old generated defaults."""
+    for key, default in VALID_CONFIG_KEYS.items():
+        if key == "NOTIFY_LEVEL":
+            continue
+        if data.get(key) != default:
+            return False
+    return data.get("NOTIFY_LEVEL") == 0
+
+
 def _sync_global_config() -> None:
     """Sync ~/.helloagents/helloagents.json with VALID_CONFIG_KEYS.
 
@@ -177,6 +187,16 @@ def _sync_global_config() -> None:
 
     changed = False
 
+    # Migrate legacy aliases before adding defaults. A legacy notify_level key
+    # is treated as user-set and preserved.
+    legacy_notify = "notify_level" in data
+    if legacy_notify and "NOTIFY_LEVEL" not in data:
+        data["NOTIFY_LEVEL"] = data.pop("notify_level")
+        changed = True
+    elif legacy_notify:
+        del data["notify_level"]
+        changed = True
+
     # Add missing keys with defaults
     added: list[str] = []
     for key, default in VALID_CONFIG_KEYS.items():
@@ -187,6 +207,14 @@ def _sync_global_config() -> None:
     if added:
         print(_msg(f"  已补充缺失配置项: {', '.join(added)}",
                    f"  Added missing config keys: {', '.join(added)}"))
+
+    # v2.4.1+: sound notification is the default. Upgrade only untouched old
+    # generated configs; legacy notify_level remains a user preference.
+    if not legacy_notify and _looks_like_old_default_config(data):
+        data["NOTIFY_LEVEL"] = VALID_CONFIG_KEYS["NOTIFY_LEVEL"]
+        changed = True
+        print(_msg("  已将默认通知模式迁移为声音通知 (NOTIFY_LEVEL=2)",
+                   "  Migrated default notifications to sound (NOTIFY_LEVEL=2)"))
 
     # Warn about unknown keys
     unknown = [k for k in data if k not in VALID_CONFIG_KEYS]

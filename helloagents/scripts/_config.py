@@ -22,7 +22,7 @@ VALID_CONFIG_KEYS: dict[str, int | str] = {
     "EVAL_MODE": 1,
     "UPDATE_CHECK": 72,
     "CSV_BATCH_MAX": 16,
-    "NOTIFY_LEVEL": 0,
+    "NOTIFY_LEVEL": 2,
 }
 
 # Legacy alias: notify_level → NOTIFY_LEVEL (backward compatibility)
@@ -40,11 +40,11 @@ def read_global_config() -> dict:
 
 
 def get_notify_mode() -> int:
-    """NOTIFY_LEVEL: 0=off, 1=desktop, 2=sound, 3=both. Default 0."""
+    """NOTIFY_LEVEL: 0=off, 1=desktop, 2=sound, 3=both. Default 2."""
     cfg = read_global_config()
     try:
         # Support both NOTIFY_LEVEL (canonical) and notify_level (legacy)
-        mode = int(cfg.get("NOTIFY_LEVEL", cfg.get("notify_level", 0)))
+        mode = int(cfg.get("NOTIFY_LEVEL", cfg.get("notify_level", 2)))
         return mode if 0 <= mode <= 3 else 0
     except (ValueError, TypeError):
         return 0

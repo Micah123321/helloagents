@@ -48,7 +48,7 @@ VALID_CONFIG_KEYS: dict[str, int | str] = {
     "EVAL_MODE": 1,
     "UPDATE_CHECK": 72,
     "CSV_BATCH_MAX": 16,
-    "NOTIFY_LEVEL": 0,
+    "NOTIFY_LEVEL": 2,
 }
 
 # Legacy alias: notify_level → NOTIFY_LEVEL (backward compatibility)

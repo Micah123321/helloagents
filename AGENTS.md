@@ -39,7 +39,7 @@ BILINGUAL_COMMIT: 1  # 0=仅 OUTPUT_LANGUAGE, 1=OUTPUT_LANGUAGE + English
 EVAL_MODE: 1  # 1=PROGRESSIVE（渐进式追问，默认）, 2=ONESHOT（一次性追问）
 UPDATE_CHECK: 72  # 0=OFF（关闭更新检查），正整数=缓存有效小时数（默认 72）
 CSV_BATCH_MAX: 16  # 0=OFF（关闭 CSV 批处理编排），正整数=最大并发数（默认 16，上限 64，仅 Codex CLI）
-NOTIFY_LEVEL: 0  # 0=off, 1=desktop, 2=sound, 3=both（桌面/声音通知模式）
+NOTIFY_LEVEL: 2  # 0=off, 1=desktop, 2=sound, 3=both（桌面/声音通知模式）
 ```
 
 **开关行为摘要:**
@@ -58,7 +58,7 @@ NOTIFY_LEVEL: 0  # 0=off, 1=desktop, 2=sound, 3=both（桌面/声音通知模式
 | CSV_BATCH_MAX | N (正整数) | CSV 批处理最大并发数（默认 16，上限 64），仅 Codex CLI 生效，其他 CLI 忽略 |
 | NOTIFY_LEVEL | 0 | 关闭通知 |
 | NOTIFY_LEVEL | 1 | 桌面通知 |
-| NOTIFY_LEVEL | 2 | 声音通知 |
+| NOTIFY_LEVEL | 2 | 声音通知（默认） |
 | NOTIFY_LEVEL | 3 | 桌面+声音通知 |
 
 > 例外: ~init 显式调用时忽略 KB_CREATE_MODE 开关
