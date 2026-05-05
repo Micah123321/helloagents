@@ -14,6 +14,7 @@ Examples:
 """
 
 import argparse
+import json
 import re
 import shutil
 import sys
@@ -54,19 +55,104 @@ except ImportError:
     )
 
 
-def update_task_status(task_file: Path, status: str):
+def build_status_payload(
+    content: str,
+    status: str,
+    current: str,
+    timestamp: str,
+    existing: dict | None = None,
+) -> dict:
+    """Build package status data from task markers."""
+    counts = {
+        "completed": len(re.findall(r'\[√\]', content)),
+        "failed": len(re.findall(r'\[X\]', content)),
+        "skipped": len(re.findall(r'\[-\]', content)),
+        "pending": len(re.findall(r'\[ \]', content)),
+        "uncertain": len(re.findall(r'\[\?\]', content)),
+    }
+    total = sum(counts.values())
+    done = counts["completed"] + counts["skipped"]
+    payload = dict(existing or {})
+    payload.update({
+        "status": status,
+        **counts,
+        "total": total,
+        "done": done,
+        "percent": round(done / total * 100) if total > 0 else 100,
+        "current": current,
+        "updated_at": timestamp,
+    })
+    return payload
+
+
+def update_embedded_status(content: str, status: str, current: str, timestamp: str) -> str:
+    """Sync @status metadata and an existing LIVE_STATUS JSON block."""
+    yaml_pattern = re.compile(r'(```yaml\n)(.*?)(\n```)', re.DOTALL)
+
+    def replace_yaml(match):
+        prefix, block, suffix = match.groups()
+        if re.search(r'(?m)^@status:\s*\S+.*$', block):
+            block = re.sub(
+                r'(?m)^@status:\s*\S+.*$',
+                f"@status: {status}",
+                block,
+                count=1,
+            )
+        else:
+            lines = block.split('\n')
+            insert_pos = len(lines)
+            for i, line in enumerate(lines):
+                if line.startswith("@created:") or line.startswith("@feature:"):
+                    insert_pos = i + 1
+            lines.insert(insert_pos, f"@status: {status}")
+            block = '\n'.join(lines)
+        return prefix + block + suffix
+
+    content = yaml_pattern.sub(replace_yaml, content, count=1)
+    live_pattern = re.compile(
+        r'(## LIVE_STATUS\s*\n\s*```json\s*\n)(.*?)(\n```)',
+        re.DOTALL,
+    )
+
+    def replace_live(match):
+        prefix, raw_json, suffix = match.groups()
+        try:
+            existing = json.loads(raw_json.strip())
+            if not isinstance(existing, dict):
+                existing = {}
+        except json.JSONDecodeError:
+            existing = {}
+        payload = build_status_payload(content, status, current, timestamp, existing)
+        return prefix + json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ) + suffix
+
+    return live_pattern.sub(replace_live, content, count=1)
+
+
+def update_task_status(task_file: Path, status: str, archive_month: str | None = None):
     """
     更新 tasks.md 的状态备注
 
     Args:
         task_file: tasks.md 文件路径
         status: 状态类型 (completed/skipped)
+        archive_month: archive/YYYY-MM 中的 YYYY-MM 部分
     """
     if not task_file.exists():
         return
 
     content = task_file.read_text(encoding='utf-8')
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    json_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    archive_label = f"archive/{archive_month}" if archive_month else "archive"
+    current = (
+        f"已归档到 {archive_label}"
+        if status == "completed"
+        else f"已跳过并归档到 {archive_label}"
+    )
 
     # 使用语言无关的标识符 @status（不会被翻译）
     if status == "completed":
@@ -102,7 +188,17 @@ def update_task_status(task_file: Path, status: str):
             lines.insert(1, '')
 
     content = '\n'.join(lines)
+    content = update_embedded_status(content, status, current, json_timestamp)
     task_file.write_text(content, encoding='utf-8')
+    status_json = task_file.parent / ".status.json"
+    status_json.write_text(
+        json.dumps(
+            build_status_payload(content, status, current, json_timestamp),
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding='utf-8',
+    )
 
 
 def update_archive_index(archive_path: Path, package_name: str, status: str):
@@ -268,7 +364,7 @@ def migrate_package(package_path: Path, archive_base: Path, status: str = "compl
     # 步骤5: 更新 tasks.md 状态（移动成功后再更新，避免移动失败时状态不一致）
     task_file = target_path / "tasks.md"
     try:
-        update_task_status(task_file, status)
+        update_task_status(task_file, status, year_month)
         report.mark_completed(
             "更新 tasks.md 状态",
             str(task_file),
