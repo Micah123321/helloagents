@@ -40,11 +40,13 @@
   proposal.md:
     - 包含需求、方案、影响范围、风险评估
     - R2 implementation 方案应包含方案取舍与验证策略
+    - code-review 方案包应包含 conservative_plan、aggressive_plan、selected_plan=conservative 和审查问题摘要
   tasks.md:
     - 每个任务是原子操作
     - 每个任务包含文件路径或明确作用范围
     - 每个任务包含预期变更、完成标准、验证方式、depends_on
     - 任务可独立执行、独立验证，依赖关系可拓扑排序
+    - code-review 方案包默认只写入保守方案任务；激进方案作为 proposal.md 备选，不进入默认待执行任务列表
 ```
 
 ### updateTask(taskId, status, result)
@@ -123,6 +125,25 @@ LIVE_STATUS 格式: 按 G11 定义
 判定: tasks.md 无执行任务
 归档: 按本服务 archive() 接口执行
 标记: archive/_index.md 中标注 "overview"
+```
+
+### Code-review 类型特殊处理
+
+```yaml
+触发: ~review 发现问题后自动创建 plan/YYYYMMDDHHMM_code-review/ 方案包
+proposal.md 必填:
+  - 审查范围、审查结果摘要、high/medium/low 问题列表
+  - conservative_plan: 默认执行路径，最小必要修复，低风险、局部改动、保持现有行为稳定
+  - aggressive_plan: 备选路径，更大范围重构、抽象收敛或结构清理
+  - selected_plan: conservative
+  - 方案取舍: 说明默认运行保守方案，激进方案仅在用户明确指定时执行
+tasks.md 必填:
+  - 仅包含 conservative_plan 对应的默认可执行任务
+  - 每个任务仍需包含文件路径/作用范围、预期变更、完成标准、验证方式、depends_on
+执行:
+  - 创建并验证方案包后，由 ~review 设置 CURRENT_PACKAGE
+  - 进入 DEVELOP 阶段直接执行默认保守任务，不再要求用户手动运行 ~exec
+  - EHRB、方案包验证失败、开发实施失败仍按对应规则中断或处理
 ```
 
 ---
