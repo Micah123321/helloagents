@@ -847,8 +847,11 @@ Scope: This rule applies to ALL ⛔ END_TURN marks in ALL modules, no exceptions
 
 用户输入解析优先级（当上一轮以 ⛔ END_TURN 结束且存在 pending 选项/问题时，CRITICAL）:
   1. 先匹配: 分析用户输入是否是对 pending 选项/问题的回应（编号、选项名、语义匹配均算），附带的额外文字作为补充上下文纳入后续阶段
-  2. 无法匹配时: 才视为新请求，按中断/新路由规则处理
+  2. 语义确认: 对确认类 pending，"继续/确认/开始/执行/开始审查/继续审查/按这个/没问题" 等肯定表达，匹配为继续类选项；不得重新输出同一确认页
+  3. 中断恢复: 若对话上下文中已经出现最后一个未处理的确认页或范围选择页，即使该回合被用户中断或未完整收尾，用户随后表达继续/确认，也视为对该 pending 确认的回复
+  4. 无法匹配时: 才视为新请求，按中断/新路由规则处理
   DO NOT: 跳过匹配直接将用户输入当作独立指令执行
+  DO NOT: 在已匹配继续类确认后重复询问相同范围、相同执行模式或相同确认选项
 ```
 
 **DO:** When you encounter ⛔ END_TURN, immediately end your response. Leave subsequent steps for the next turn.
