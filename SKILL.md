@@ -16,4 +16,4 @@ Routing is not the "planning tool" — it is a mandatory triage step that applie
 User confirmation IS "needed" for R2 level tasks. Never execute R2 without it.
 
 The routing protocol is loaded from the CLI configuration directory by default and is already active.
-Available commands: ~help, ~auto, ~plan, ~exec, ~init, ~review, ~commit, ~test, ~status, ~clean, ~rollback, ~validatekb, ~upgradekb, ~cleanplan, ~rlm
+Available commands: ~help, ~auto, ~plan, ~exec, ~init, ~ssh, ~review, ~commit, ~test, ~status, ~clean, ~rollback, ~validatekb, ~upgradekb, ~cleanplan, ~rlm

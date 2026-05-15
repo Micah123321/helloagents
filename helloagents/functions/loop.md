@@ -53,7 +53,8 @@
     最大轮次: 循环上限（默认 5 轮）
 
   自动检测（项目上下文可推断时）:
-    读取项目配置推荐指标和守卫命令
+    优先调用 ProjectEnvService.validationCommands(scope=loop)，从 .helloagents/runbook.yaml 推荐守卫命令
+    未命中时读取项目配置推荐指标和守卫命令
     用户确认或调整
 
 确认指标设置:

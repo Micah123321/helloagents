@@ -75,6 +75,14 @@ tasks.md: 文件存在 + 元数据头部 + 进度概览 + 任务列表 + 执行�
 | plan/proposal.md | {KB_ROOT}/plan/{pkg}/proposal.md | 变更提案 |
 | plan/tasks.md | {KB_ROOT}/plan/{pkg}/tasks.md | 任务清单 |
 
+### 项目环境模板
+
+| 模板路径 | 生成路径 | 用途 |
+|---------|---------|------|
+| project.yaml | {KB_ROOT}/project.yaml | 项目环境、服务器角色、远程路径和非敏感命令 |
+| secrets.local.yaml | {KB_ROOT}/secrets.local.yaml | 本机敏感连接信息和凭据引用，禁止提交 |
+| runbook.yaml | {KB_ROOT}/runbook.yaml | 日常迭代、测试、部署、日志和回滚流程 |
+
 ### 其他参考文件
 
 | 文件路径 | 用途 | 说明 |
@@ -121,6 +129,15 @@ context.md:
 ```yaml
 流程: 读取 {TEMPLATES_DIR}/plan/ 模板 → 填充占位符 → 写入 {KB_ROOT}/plan/{pkg}/
 产出: proposal.md + tasks.md
+```
+
+### 创建项目环境配置
+
+```yaml
+触发: ~ssh
+流程: 读取 {TEMPLATES_DIR}/project.yaml、secrets.local.yaml、runbook.yaml → 填充已知占位符 → 写入 {KB_ROOT}/
+产出: project.yaml + secrets.local.yaml + runbook.yaml
+安全: secrets.local.yaml 和 project.local.yaml 必须加入 .gitignore；模板禁止保存明文密码和私钥正文
 ```
 
 ---

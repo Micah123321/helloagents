@@ -1,0 +1,95 @@
+# HelloAGENTS 项目环境配置
+# 可提交到 Git：仅保存环境角色、路径、命令和安全策略，不保存密码、token 或私钥内容。
+
+version: 1
+
+project:
+  name: "{project_name}"
+  type: "{project_type}"
+  root: "."
+  default_environment: local
+
+environments:
+  local:
+    role: development
+    host_ref: local_windows
+    description: Windows 本地开发环境
+    protected: false
+
+  dev:
+    role: development
+    host_ref: dev_server
+    description: 开发联调服务器
+    protected: false
+
+  test:
+    role: test
+    host_ref: test_server
+    description: 测试环境服务器
+    protected: false
+
+  production:
+    role: production
+    host_ref: prod_server
+    description: 生产环境服务器
+    protected: true
+    requires_confirmation: true
+
+paths:
+  local:
+    workspace: "{local_workspace}"
+
+  dev:
+    workspace: "/data/www/{project_name}"
+    upload_dir: "/data/www/{project_name}/releases"
+    log_dir: "/data/logs/{project_name}"
+
+  test:
+    workspace: "/data/www/{project_name}"
+    upload_dir: "/data/www/{project_name}/releases"
+    log_dir: "/data/logs/{project_name}"
+
+  production:
+    workspace: "/data/www/{project_name}"
+    upload_dir: "/data/www/{project_name}/releases"
+    log_dir: "/data/logs/{project_name}"
+
+commands:
+  local:
+    install: "{local_install_command}"
+    lint: "{local_lint_command}"
+    test: "{local_test_command}"
+    build: "{local_build_command}"
+
+  remote_common:
+    status: "systemctl status {service_name}"
+    logs: "journalctl -u {service_name} -n 200 --no-pager"
+    restart: "sudo systemctl restart {service_name}"
+
+  dev:
+    deploy: "git pull && {remote_install_command} && {remote_build_command} && {remote_restart_command_dev}"
+    logs: "{remote_logs_command_dev}"
+
+  test:
+    deploy: "git pull && {remote_install_command} && {remote_build_command} && {remote_restart_command_test}"
+    smoke_test: "curl -fsS http://127.0.0.1:{health_port}/health"
+    logs: "{remote_logs_command_test}"
+
+  production:
+    deploy: "git pull && {remote_install_command} && {remote_build_command} && {remote_restart_command_prod}"
+    smoke_test: "curl -fsS http://127.0.0.1:{health_port}/health"
+    logs: "{remote_logs_command_prod}"
+
+safety:
+  production_requires_confirmation: true
+  forbid_plaintext_passwords: true
+  forbid_private_key_content: true
+  forbid_root_login_by_default: true
+  require_confirmation_for:
+    - production.deploy
+    - production.restart
+    - production.rollback
+    - database.write
+    - cache.flush
+    - file.delete
+    - remote_command

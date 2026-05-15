@@ -446,6 +446,7 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
 | ~exec | 执行已有方案包 |
 | ~build | 智能构建（有方案包则执行，无则按需路由实现） |
 | ~init | 初始化知识库 |
+| ~ssh | 初始化/更新项目服务器、环境、路径和运行命令配置 |
 | ~commit | 根据上下文生成提交信息 |
 | ~status / ~help | 状态与帮助 |
 
@@ -534,7 +535,7 @@ R2 标准流的设计阶段会派发 3–6 个子代理，各自独立生成竞�
 
 ### 质量验证（Ralph Loop 与 Break-loop）
 
-**Ralph Loop**（Claude Code，通过 SubagentStop Hook）：子代理完成代码修改后，自动运行项目验证命令。验证失败时阻断子代理退出，要求修复（最多 1 次重试循环）。验证命令来源优先级：`.helloagents/verify.yaml` → `package.json` scripts → 自动检测。
+**Ralph Loop**（Claude Code，通过 SubagentStop Hook）：子代理完成代码修改后，自动运行项目验证命令。验证失败时阻断子代理退出，要求修复（最多 1 次重试循环）。验证命令来源优先级：`.helloagents/runbook.yaml` → `.helloagents/verify.yaml` → `package.json` scripts → 自动检测。
 
 **Break-loop**（深度根因分析）：当任务经过 Ralph Loop + 至少 1 次手动修复仍反复失败时触发，执行五维根因分析：
 
@@ -656,7 +657,7 @@ CHANGELOG 使用语义版本号（X.Y.Z），版本来源优先级：用户指�
 - helloagents/cli.py：CLI 入口
 - helloagents/_common.py：共享常量与工具函数
 - helloagents/core/：CLI 管理模块（安装、卸载、更新、状态、调度器、钩子设置）
-- helloagents/functions：命令定义（21 个）
+- helloagents/functions：命令定义（22 个）
 - helloagents/stages：设计、开发阶段定义
 - helloagents/services：知识库、方案包、记忆等核心服务
 - helloagents/rules：状态机、缓存、工具、扩展、子代理协议

@@ -10,6 +10,7 @@
 | 模块索引 | [modules/_index.md](modules/_index.md) |
 | 某个模块的职责和接口 | [modules/{模块名}.md](modules/{模块名}.md) |
 | 项目变更历史 | [CHANGELOG.md](CHANGELOG.md) |
+| 项目环境、服务器和运行手册 | [project.yaml](project.yaml), [runbook.yaml](runbook.yaml) |
 | 历史方案索引 | [archive/_index.md](archive/_index.md) |
 | 当前待执行的方案 | [plan/](plan/) |
 
@@ -40,6 +41,7 @@ kb_version: {HELLOAGENTS_VERSION}
 
 任务相关:
   - 涉及特定模块: 读取 modules/{模块名}.md
+  - 涉及测试/迭代/服务器/部署: 读取 project.yaml 和 runbook.yaml；需要真实连接信息时读取本机 secrets.local.yaml
   - 需要历史决策: 搜索 CHANGELOG.md → 读取对应 archive/{YYYY-MM}/{方案包}/proposal.md
   - 继续之前任务: 读取 plan/{方案包}/*
 ```

@@ -62,6 +62,109 @@ def load_verify_yaml(cwd: str) -> Optional[List[str]]:
     return commands if commands else None
 
 
+def _strip_inline_comment(value: str) -> str:
+    """Remove a YAML-style inline comment outside simple quoted values."""
+    value = value.strip()
+    if not value or value[0] in ("'", '"'):
+        return value.strip('"').strip("'")
+    return value.split("#", 1)[0].strip().strip('"').strip("'")
+
+
+def _is_runnable_command(command: str) -> bool:
+    """Return whether a parsed runbook value is a concrete command."""
+    command = command.strip()
+    if not command:
+        return False
+    # Template placeholders must not reach shell=True execution.
+    if "{" in command and "}" in command:
+        return False
+    return True
+
+
+def _indent_width(line: str) -> int:
+    """Return leading-space indentation width."""
+    return len(line) - len(line.lstrip(" "))
+
+
+def _extract_list_under_key(lines: list[str], key: str) -> list[str]:
+    """Extract a simple scalar list under a YAML key.
+
+    This intentionally supports only the small subset used by
+    .helloagents/runbook.yaml templates, avoiding a third-party YAML
+    dependency in hook execution.
+    """
+    commands: list[str] = []
+    key_indent: Optional[int] = None
+    in_block = False
+
+    for raw_line in lines:
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        indent = _indent_width(raw_line)
+        if not in_block:
+            if stripped == f"{key}:":
+                key_indent = indent
+                in_block = True
+            continue
+
+        if key_indent is not None and indent <= key_indent and not stripped.startswith("- "):
+            break
+        if stripped.startswith("- "):
+            command = _strip_inline_comment(stripped[2:])
+            if _is_runnable_command(command):
+                commands.append(command)
+
+    return commands
+
+
+def load_runbook_yaml(cwd: str) -> Optional[List[str]]:
+    """从 .helloagents/runbook.yaml 读取本地验证命令。"""
+    runbook_file = Path(cwd) / ".helloagents" / "runbook.yaml"
+    if not runbook_file.is_file():
+        return None
+
+    try:
+        content = runbook_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+    lines = content.splitlines()
+
+    # 优先读取 validation.before_commit 里的直接命令列表。
+    before_commit = _extract_list_under_key(lines, "before_commit")
+    if before_commit:
+        return before_commit
+
+    # 降级读取 local_iteration workflow 中的 command 字段。command_ref 需要
+    # project.yaml 展开，hook 脚本不做跨文件复杂解析，留给主代理规则流程处理。
+    commands: list[str] = []
+    in_local_iteration = False
+    local_indent: Optional[int] = None
+
+    for raw_line in lines:
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        indent = _indent_width(raw_line)
+        if not in_local_iteration:
+            if stripped == "local_iteration:":
+                in_local_iteration = True
+                local_indent = indent
+            continue
+
+        if local_indent is not None and indent <= local_indent and stripped.endswith(":"):
+            break
+        if stripped.startswith("command:"):
+            command = _strip_inline_comment(stripped.split(":", 1)[1])
+            if _is_runnable_command(command):
+                commands.append(command)
+
+    return commands if commands else None
+
+
 def detect_from_package_json(cwd: str) -> List[str]:
     """从 package.json scripts 中检测 lint/typecheck/test 命令。"""
     pkg_file = Path(cwd) / "package.json"
@@ -82,18 +185,23 @@ def detect_from_package_json(cwd: str) -> List[str]:
 
 
 def detect_verify_commands(cwd: str) -> List[str]:
-    """按优先级检测验证命令: verify.yaml > package.json > pyproject.toml。"""
-    # 优先级1: 自定义配置
+    """按优先级检测验证命令: runbook.yaml > verify.yaml > package.json > pyproject.toml。"""
+    # 优先级1: 项目运行手册
+    runbook = load_runbook_yaml(cwd)
+    if runbook:
+        return runbook
+
+    # 优先级2: 自定义验证配置
     custom = load_verify_yaml(cwd)
     if custom:
         return custom
 
-    # 优先级2: package.json
+    # 优先级3: package.json
     npm_cmds = detect_from_package_json(cwd)
     if npm_cmds:
         return npm_cmds
 
-    # 优先级3: pyproject.toml
+    # 优先级4: pyproject.toml
     py_cmds = detect_from_pyproject(cwd)
     if py_cmds:
         return py_cmds

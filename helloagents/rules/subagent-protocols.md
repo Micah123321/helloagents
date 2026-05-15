@@ -53,6 +53,7 @@ R1 例外: R1 快速流程为单点操作，天然仅 1 个工作单元，不触
     ~review: 子代理（按编排五步法选择类型）— ≥2个分析维度或审查文件≥2 时并行（质量/安全/性能，按文件数和维度数分配子代理）
     ~validatekb: 子代理（按编排五步法选择类型）— ≥2个验证维度或知识库文件≥2 时并行（按文件数和维度数分配子代理）
     ~init: 子代理（按编排五步法选择类型）— ≥2个可独立扫描的模块目录时并行
+    ~ssh: 主代理按 ProjectEnvService 直接执行；只读扫描可并行，配置写入不通过子代理中转
 
 通用路径角色（不绑定特定阶段，按需调用）:
   writer — 用户通过 ~rlm spawn writer 手动调用，用于生成独立文档（非知识库同步）
@@ -78,7 +79,7 @@ R1 例外: R1 快速流程为单点操作，天然仅 1 个工作单元，不触
 
 质量验证循环（Claude Code）: SubagentStop hook 在代码实现子代理完成时自动运行项目验证命令，
   验证失败 → 子代理继续修复（最多1次循环，stop_hook_active=true 时放行）
-  验证命令来源: .helloagents/verify.yaml > package.json scripts > 自动检测
+  验证命令来源: .helloagents/runbook.yaml > .helloagents/verify.yaml > package.json scripts > 自动检测
 
 Worktree 隔离（Claude Code）: 当多个子代理需修改同一文件的不同区域时，
   使用 Agent(isolation="worktree") 在独立 worktree 中执行，避免 Edit 工具冲突

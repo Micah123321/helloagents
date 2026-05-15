@@ -1,0 +1,77 @@
+# HelloAGENTS 项目运行手册
+# 可提交到 Git：保存日常迭代、测试、部署、日志和回滚流程。
+
+version: 1
+
+validation:
+  # before_commit 只放已经确认可本地执行的真实命令。
+  # 示例:
+  #   - "npm run lint"
+  #   - "npm test"
+  #   - "npm run build"
+  before_commit: []
+
+workflows:
+  local_iteration:
+    description: 本地日常开发验证
+    environment: local
+    steps:
+      - name: install
+        command_ref: commands.local.install
+      - name: lint
+        command_ref: commands.local.lint
+      - name: test
+        command_ref: commands.local.test
+      - name: build
+        command_ref: commands.local.build
+
+  test_iteration:
+    description: 测试环境验证
+    environment: test
+    requires_confirmation: true
+    steps:
+      - name: connect
+        action: ssh
+        host_ref: test_server
+      - name: enter_workspace
+        command: "cd /data/www/{project_name}"
+      - name: deploy
+        command_ref: commands.test.deploy
+      - name: smoke_test
+        command_ref: commands.test.smoke_test
+      - name: logs_on_failure
+        command_ref: commands.test.logs
+        run_on_failure: true
+
+  deploy_production:
+    description: 生产部署
+    environment: production
+    requires_confirmation: true
+    protected: true
+    steps:
+      - name: connect
+        action: ssh
+        host_ref: prod_server
+      - name: enter_workspace
+        command: "cd /data/www/{project_name}"
+      - name: deploy
+        command_ref: commands.production.deploy
+      - name: smoke_test
+        command_ref: commands.production.smoke_test
+      - name: logs_on_failure
+        command_ref: commands.production.logs
+        run_on_failure: true
+
+  rollback_production:
+    description: 生产回滚
+    environment: production
+    requires_confirmation: true
+    protected: true
+    steps:
+      - name: connect
+        action: ssh
+        host_ref: prod_server
+      - name: rollback
+        command: "cd /data/www/{project_name} && ./scripts/rollback.sh"
+      - name: smoke_test
+        command_ref: commands.production.smoke_test

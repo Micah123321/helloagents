@@ -39,8 +39,12 @@
 
 ```yaml
 扫描（多个独立检测项，同一消息中发起多个并行工具调用）:
-  并行读取: 项目配置文件（package.json/pyproject.toml 等）中的测试配置 + 常见测试目录（test/tests/__tests__/）+ 文件命名模式（*_test.*/*.spec.*）
-  汇总: 根据并行读取结果识别测试框架
+  1. 优先调用 ProjectEnvService.validationCommands(scope=test):
+     - 读取 .helloagents/runbook.yaml workflows.local_iteration 或 validation.before_commit
+     - 命中本地测试命令 → 作为推荐测试命令
+     - 命中远程/protected workflow → 输出目标环境和命令预览，按确认规则处理
+  2. 未命中 ProjectEnvService → 并行读取项目配置文件（package.json/pyproject.toml 等）中的测试配置 + 常见测试目录（test/tests/__tests__/）+ 文件命名模式（*_test.*/*.spec.*）
+  汇总: 根据 ProjectEnvService 或并行读取结果识别测试框架/测试命令
 
 多框架共存: 询问用户选择
 无法检测: 请求用户提供测试命令

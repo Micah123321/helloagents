@@ -70,6 +70,9 @@
 
 ```yaml
 工具探测（≤3秒）:
+  优先调用 ProjectEnvService.validationCommands(scope=verify):
+    .helloagents/runbook.yaml local_iteration 或 validation.before_commit → 推荐验证命令
+    未命中 → 继续读取项目配置
   读取项目配置 → 识别可用验证工具:
     lint/格式化: eslint/prettier/ruff/black 等
     类型检查: tsc/mypy/pyright 等

@@ -109,6 +109,12 @@ MODE=1不存在 或 MODE=2非编程不存在:
 KB_SKIPPED=true → 扫描项目现有资源（代码库/文档/素材）
 KB_SKIPPED=false → 知识库优先，不足则扫描项目现有资源
 
+项目环境配置:
+  检测 {KB_ROOT}/project.yaml、runbook.yaml、secrets.local.yaml 是否存在
+  存在 → 按需加载 services/project-env.md，提取环境角色、远程路径、验证命令和 protected 约束，作为实施条件与验证策略来源
+  不存在 → 不阻塞；当任务涉及服务器、测试环境、生产环境、部署、远程日志或用户要求日常迭代命令时，提示可使用 ~ssh 初始化
+  DO NOT: 在 DESIGN 阶段连接服务器或读取真实凭据
+
 澄清模式:
   已有项目（假设模式，默认）:
     - 先读取知识库摘要 + 与当前需求直接相关的 5-15 个文件/配置/模板

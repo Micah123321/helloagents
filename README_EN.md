@@ -435,6 +435,7 @@ These commands run inside AI chat, not your system shell.
 | ~exec | execute existing package |
 | ~build | smart build (execute package if exists, otherwise route by need) |
 | ~init | initialize knowledge base |
+| ~ssh | initialize/update project servers, environments, paths, and run commands |
 | ~commit | generate commit message from context |
 | ~status / ~help | status and help |
 
@@ -523,7 +524,7 @@ During development, the system auto-detects the project's package manager via lo
 
 ### Quality Verification (Ralph Loop & Break-loop)
 
-**Ralph Loop** (Claude Code, via SubagentStop Hook): after a sub-agent completes code changes, the project's verification command runs automatically. On failure, the sub-agent is blocked from exiting and must fix the issue (max 1 retry loop). Verification command priority: `.helloagents/verify.yaml` → `package.json` scripts → auto-detected.
+**Ralph Loop** (Claude Code, via SubagentStop Hook): after a sub-agent completes code changes, the project's verification command runs automatically. On failure, the sub-agent is blocked from exiting and must fix the issue (max 1 retry loop). Verification command priority: `.helloagents/runbook.yaml` → `.helloagents/verify.yaml` → `package.json` scripts → auto-detected.
 
 **Break-loop** (deep root cause analysis): triggered when a task fails repeatedly (after Ralph Loop + at least 1 manual fix attempt), performing five-dimension root cause analysis:
 

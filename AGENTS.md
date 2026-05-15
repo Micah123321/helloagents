@@ -503,7 +503,7 @@ Prohibitions (CRITICAL):
       4. KB同步: CHANGELOG.md "快速修改"分类下记录（格式: - **[模块名]**: 描述 + 类型标注 + 文件:行号范围）
       5. 遗留方案包扫描 [→ services/package.md]
       6. 验收（均为警告性）: 变更已应用 + 目标验证:
-         快速探测项目验证工具（读取 package.json scripts / pyproject.toml 等，≤2秒）
+         快速探测项目验证工具（优先读取 ProjectEnvService: .helloagents/runbook.yaml，其次 package.json scripts / pyproject.toml 等，≤2秒）
          有 lint/类型检查 → 对修改文件执行
          有测试命令 → 运行相关测试
          均不可用+可执行代码 → 内联验证（构造最小输入验证输出）
@@ -537,7 +537,7 @@ Prohibitions (CRITICAL):
 | 闸门等级 | 命令 | 评估行为 | 确认行为 |
 |----------|------|----------|----------|
 | 无 | ~help, ~rlm, ~status, ~idea | 无评估 | 直接执行，无需确认（破坏性子命令内部自带确认） |
-| 轻量 | ~init, ~upgradekb, ~clean, ~cleanplan, ~test, ~commit, ~review, ~validatekb, ~exec, ~rollback, ~loop, ~wiki, ~verify | 需求理解 + EHRB 检测（不评分不追问）| 输出确认信息（需求摘要+后续流程）→ ⛔ |
+| 轻量 | ~init, ~ssh, ~upgradekb, ~clean, ~cleanplan, ~test, ~commit, ~review, ~validatekb, ~exec, ~rollback, ~loop, ~wiki, ~verify | 需求理解 + EHRB 检测（不评分不追问）| 输出确认信息（需求摘要+后续流程）→ ⛔ |
 | 完整 | ~auto, ~plan, ~build, ~prd | 需求评估（评分+按需追问+EHRB） | 核心维度未充分→追问→⛔；全部充分→确认信息（评分+后续流程）→ ⛔ |
 
 **命令执行流程（CRITICAL）:**
@@ -935,20 +935,21 @@ Scope: This rule applies to ALL ⛔ END_TURN marks in ALL modules, no exceptions
 | 触发条件 | 读取文件 |
 |----------|----------|
 | 会话启动 | ~/.helloagents/helloagents.json — 静默读取注入上下文，不输出加载状态，文件不存在时静默跳过，helloagents.json 中的键覆盖 G1 默认值 |
-| R1 进入快速流程（编码类） | services/package.md, rules/state.md, services/knowledge.md（CHANGELOG更新时） |
+| R1 进入快速流程（编码类） | services/package.md, services/project-env.md（验证命令探测时）, rules/state.md, services/knowledge.md（CHANGELOG更新时） |
 | R2 进入方案设计（入口） | stages/design.md |
-| DESIGN Phase1 按需 | services/knowledge.md（KB_SKIPPED=false）, rules/scaling.md（TASK_COMPLEXITY=complex，在步骤3设置后按条件加载）, rules/tools.md（project_stats.py 调用时） |
+| DESIGN Phase1 按需 | services/project-env.md（存在项目环境配置或涉及测试/迭代/服务器时）, services/knowledge.md（KB_SKIPPED=false）, rules/scaling.md（TASK_COMPLEXITY=complex，在步骤3设置后按条件加载）, rules/tools.md（project_stats.py 调用时） |
 | DESIGN Phase2 按需 | services/package.md, services/templates.md, rules/state.md |
 | R2 进入开发实施（入口） | stages/develop.md, services/package.md |
-| DEVELOP 按需 | services/knowledge.md（KB_SKIPPED=false）, services/attention.md（进度快照时）, rules/cache.md, rules/state.md |
+| DEVELOP 按需 | services/project-env.md（验证命令探测时）, services/knowledge.md（KB_SKIPPED=false）, services/attention.md（进度快照时）, rules/cache.md, rules/state.md |
 | ~auto | functions/auto.md |
 | ~plan | functions/plan.md |
 | ~exec | functions/exec.md, rules/tools.md |
 | ~init | functions/init.md, services/templates.md, rules/tools.md |
+| ~ssh | functions/ssh.md, services/project-env.md, services/templates.md, rules/tools.md |
 | ~upgradekb | functions/upgradekb.md, services/templates.md, rules/tools.md |
 | ~cleanplan | functions/cleanplan.md, rules/tools.md |
 | ~commit | functions/commit.md |
-| ~test | functions/test.md, services/package.md（生成修复方案包时） |
+| ~test | functions/test.md, services/project-env.md, services/package.md（生成修复方案包时） |
 | ~review | functions/review.md, services/package.md（生成优化方案包时） |
 | ~validatekb | functions/validatekb.md |
 | ~rollback | functions/rollback.md, services/knowledge.md |
@@ -959,9 +960,9 @@ Scope: This rule applies to ALL ⛔ END_TURN marks in ALL modules, no exceptions
 | ~idea | functions/idea.md |
 | ~build | functions/build.md, rules/tools.md |
 | ~prd | functions/prd.md |
-| ~loop | functions/loop.md |
+| ~loop | functions/loop.md, services/project-env.md |
 | ~wiki | functions/wiki.md, services/templates.md, services/knowledge.md |
-| ~verify | functions/verify.md, services/package.md |
+| ~verify | functions/verify.md, services/project-env.md, services/package.md |
 | ~rlm spawn | rlm/roles/{role}.md |
 | 调用脚本时 | rules/tools.md（脚本执行规范与降级处理） |
 | 子代理调度（模块文件中遇到 `[→ G10]` 或 `[RLM:角色名]` 标记时） | rules/subagent-protocols.md（通用协议）+ 按当前 CLI 加载: Claude Code → rules/subagent-claude.md, Codex CLI → rules/subagent-codex.md, 其他 → rules/subagent-other.md |

@@ -223,7 +223,8 @@ KB_SKIPPED=true → 扫描项目现有资源
 ```yaml
 编程任务:
   工具探测（步骤开始时，≤3秒）:
-    读取项目配置（package.json scripts/devDependencies、pyproject.toml、Makefile 等）
+    优先调用 ProjectEnvService.validationCommands(scope=develop)，读取 .helloagents/runbook.yaml 中 local_iteration 或 validation.before_commit
+    未命中时读取项目配置（package.json scripts/devDependencies、pyproject.toml、Makefile 等）
     + 枚举当前会话可用工具（MCP/Skills/插件）
     → 识别可用的验证能力（lint、类型检查、单元测试、E2E、构建、视觉验证等）
     不硬编码工具名: AI 基于语义理解将配置项归类到能力类别

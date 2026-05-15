@@ -55,6 +55,7 @@ SubagentStart — 子代理上下文注入:
 SubagentStop — 质量验证循环（Ralph Loop）:
   事件: SubagentStop | 匹配: agent_type = general-purpose
   动作: command hook，运行项目验证命令，失败时 decision=block 阻止子代理停止
+  验证命令来源: .helloagents/runbook.yaml > .helloagents/verify.yaml > package.json scripts > pyproject.toml
   超时: 120s | 脚本: ralph_loop.py
 
 PostToolUse — 进度快照:
