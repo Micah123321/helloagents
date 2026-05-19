@@ -34,12 +34,14 @@
 
 ```yaml
 提取信息:
-  - 项目名称和项目类型（从现有配置/代码库推断，不足则用当前目录名）
+  - 项目 id、aliases、项目名称和项目类型（从现有配置/代码库推断，不足则用当前目录名）
   - 环境角色: local/dev/test/production
   - host_ref 和服务器说明
   - 连接方式: ssh_alias / ip+port+user / private_key_path / password_ref
   - 远程 workspace、upload_dir、log_dir
   - 日常命令: install/lint/test/typecheck/build/dev/status/logs/deploy/restart/rollback
+  - 默认测试 workflow: latest_commit_fixes/local_iteration/before_commit
+  - secret_profile 和 password_ref（禁止复述明文密码）
   - Windows 本地开发特殊项: shell、workspace、ssh_client、path_style
 
 EHRB:
@@ -57,6 +59,7 @@ EHRB:
   - {KB_ROOT}/runbook.yaml
   - {KB_ROOT}/verify.yaml
   - package.json / pyproject.toml / Makefile（用于推荐命令）
+  - ~/.helloagents/projects.yaml（用于识别/刷新项目别名索引）
 
 判定:
   - 全部不存在 → 初始化模式
@@ -89,6 +92,7 @@ EHRB:
   - 将创建或更新的文件
   - 可提交文件: project.yaml、runbook.yaml
   - 本机文件: secrets.local.yaml、project.local.yaml
+  - 本机索引: ~/.helloagents/projects.yaml（仅项目 id/别名/根路径/defaults，不含敏感信息）
   - 不会执行远程连接或命令
   - 安全规则: production/protected 后续必须确认
 
@@ -114,13 +118,32 @@ EHRB:
   - 不生成真实密码；仅生成 password_ref 或注释占位
 
 字段规则:
+  - project.id 默认使用规范化项目名；project.aliases 至少包含项目名
+  - defaults.test_workflow 默认 latest_commit_fixes
+  - defaults.secret_profile 默认 local
+  - runbook.validation.workflows.default 和 latest_commit 默认指向 latest_commit_fixes
+  - workflows.latest_commit_fixes 默认描述“最新提交涉及修复功能的本地验证”
   - production 默认 protected: true
   - root 用户默认标记 warnings
   - 明文密码默认不生成
+  - 用户输入明文密码时仅生成 password_ref 建议，不在文件或输出中复述密码
   - Windows 本地环境默认 shell: powershell、path_style: windows
 ```
 
-### 步骤6: .gitignore 检查
+### 步骤6: 项目别名索引
+
+```yaml
+写入:
+  - 路径: ~/.helloagents/projects.yaml
+  - 内容: projects.{project_id}.root / aliases / default_environment / default_test_workflow
+  - 禁止: 写入 password_ref 之外的敏感引用细节、明文密码、token、私钥路径
+
+用途:
+  - 允许跨目录执行 `~test {project_id} 最新 commit 所有修复`
+  - 当前项目目录内可直接执行 `~test 最新 commit`
+```
+
+### 步骤7: .gitignore 检查
 
 ```yaml
 检测:
@@ -139,14 +162,16 @@ EHRB:
   - 若 secrets.local.yaml 已被 Git 跟踪，输出警告并建议用户移出索引
 ```
 
-### 步骤7: 验收
+### 步骤8: 验收
 
 ```yaml
 检查:
   - YAML 文件存在且非空
-  - project.yaml 包含 project/environments/commands 或 paths
-  - runbook.yaml 包含 workflows 或 validation
+  - project.yaml 包含 project.id/aliases/defaults/environments/commands 或 paths
+  - runbook.yaml 包含 validation.workflows、latest_commit_fixes、workflows 或 validation
   - secrets.local.yaml 不包含私钥正文
+  - secrets.local.yaml 不在输出中泄露真实 secret 值
+  - ~/.helloagents/projects.yaml 已写入项目 id/别名索引（用户明确跳过时除外）
   - production/protected 规则存在
   - .gitignore 覆盖本机敏感文件
 
@@ -163,7 +188,7 @@ EHRB:
 ```yaml
 主体内容:
   操作摘要: 将初始化/更新项目环境配置，不连接服务器
-  影响范围: .helloagents/project.yaml、secrets.local.yaml、runbook.yaml、可选 .gitignore
+  影响范围: .helloagents/project.yaml、secrets.local.yaml、runbook.yaml、~/.helloagents/projects.yaml、可选 .gitignore
   安全边界: secrets.local.yaml 禁止提交，production 后续执行必须确认
 选项:
   1. 继续生成/更新配置（推荐）
@@ -176,10 +201,13 @@ EHRB:
 ```yaml
 主体内容:
   执行结果: 已创建/更新项目环境配置
-  变更摘要: 文件列表、识别的环境、可用 workflow
+  变更摘要: 文件列表、项目 id/aliases、识别的环境、默认测试 workflow、可用 workflow
   验收结果: 敏感信息检查、.gitignore 检查、production 保护检查
+  后续短命令:
+    - 当前项目目录: `~test 最新 commit`
+    - 跨目录: `~test {project_id} 最新 commit 所有修复`
 下一步:
-  "运行 `~test` 或发起迭代需求时将自动读取项目环境配置。"
+  "后续运行 `~test {project_id} 最新 commit 所有修复` 将自动读取项目环境配置。"
 ```
 
 ---

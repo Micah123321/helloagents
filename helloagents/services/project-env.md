@@ -38,7 +38,8 @@
 ```yaml
 用途: 项目环境结构、环境角色、host_ref、远程路径、非敏感命令、安全策略
 允许内容:
-  - 项目名称、类型、本地根路径
+  - 项目 id、aliases、名称、类型、本地根路径
+  - defaults.test_workflow、defaults.secret_profile
   - local/dev/test/production 环境定义
   - 每个环境的 role、host_ref、workspace、log_dir、upload_dir
   - commands 中的 install/lint/test/build/status/logs 等非敏感命令
@@ -58,6 +59,7 @@
   - host_ref 对应的 ip、port、user、ssh_alias
   - private_key_path（路径引用，不是私钥内容）
   - password_ref（如 env:NAME、wincred:NAME、1password:NAME、keepass:NAME）
+  - profiles.{name}.password_ref（供项目默认 secret profile 引用）
   - Windows 本地 shell、OpenSSH 路径、workspace 覆盖
 不推荐但可识别:
   - plaintext_password
@@ -69,6 +71,7 @@
 ```yaml
 用途: 日常流程和命令编排
 常见 workflow:
+  - latest_commit_fixes: 最新提交涉及修复功能的本地验证
   - local_iteration: 本地迭代验证
   - test_iteration: 测试环境验证
   - deploy_test: 测试环境部署
@@ -79,6 +82,29 @@
   - command: 直接命令
   - command_ref: 引用 project.yaml commands
   - action: ssh/scp/local/run
+推荐字段:
+  - validation.workflows.default: 默认测试 workflow 名称
+  - validation.workflows.latest_commit: “最新 commit/最近提交/所有修复功能”测试意图对应 workflow
+  - workflows.{name}.default: true 表示默认候选 workflow
+  - workflows.{name}.intent.scope/keywords: 自然语言测试意图匹配线索
+```
+
+### 全局项目索引（可选，本机）
+
+```yaml
+路径: ~/.helloagents/projects.yaml
+用途: 跨目录执行 `~test <project_id>`、`~verify <project_id>` 时定位项目根目录
+结构:
+  projects:
+    siteguard-ai:
+      root: E:/code/python/siteguard-ai
+      aliases: [siteguard-ai, siteguard]
+      default_environment: local
+      default_test_workflow: latest_commit_fixes
+写入规则:
+  - 仅记录项目 id/别名/根路径/defaults，不写入密码、token、私钥路径或 host 明细
+  - `~ssh` 初始化或更新成功后同步写入或刷新
+  - 用户明确不写全局索引时，仅保留项目内配置
 ```
 
 ### project.local.yaml（可选，禁止提交）
@@ -110,6 +136,68 @@
 
 ## 服务接口
 
+### resolveProjectContext(input, cwd)
+
+```yaml
+触发:
+  - ~test / ~verify / ~loop 参数解析
+  - DEVELOP/R1 验证命令探测
+  - 用户输入项目别名、项目根路径或 .helloagents 配置文件路径时
+
+解析顺序:
+  1. 用户本轮明确路径:
+     - 指向 project.yaml/runbook.yaml/secrets.local.yaml → 取其父目录为 {KB_ROOT}，项目根从 project.yaml project.root 或 {KB_ROOT} 父目录推导
+     - 指向项目目录 → 使用该目录下 .helloagents/
+  2. 当前 cwd 下存在 .helloagents/project.yaml → 使用当前项目
+  3. 用户输入命中 project.yaml 的 project.id / project.aliases → 使用该项目
+  4. 用户输入命中 ~/.helloagents/projects.yaml 中的 id / aliases → 切换到登记的 root
+  5. 均未命中 → 回退当前 cwd 自动检测
+
+返回:
+  exists: true|false
+  project_id: string|null
+  project_root: path|null
+  kb_root: path|null
+  config_paths:
+    project: path|null
+    project_local: path|null
+    runbook: path|null
+    secrets_local: path|null
+  default_environment: local|dev|test|production|null
+  default_test_workflow: string|null
+  secret_profile: string|null
+  source: explicit_path|cwd|project_alias|global_index|auto
+  warnings: [...]
+
+安全:
+  - 可读取 secrets.local.yaml 结构和引用名，但不得输出 secret 值
+  - 不把 password_ref 解析成真实密码；执行远程连接前另走确认/EHRB
+```
+
+### resolveTestIntent(input, project_context)
+
+```yaml
+触发: ~test、~verify、DEVELOP 验证命令探测
+
+识别:
+  latest_commit:
+    keywords: ["最新 commit", "最近 commit", "最近提交", "本次提交", "HEAD", "latest commit"]
+    行为: 根据 git diff HEAD~1..HEAD 或 git show --name-only HEAD 推导变更范围；无 git 信息时回退默认 workflow
+  fixes:
+    keywords: ["所有修复", "修复功能", "fixes", "fixed", "bugfix"]
+    行为: 优先选择 runbook validation.workflows.latest_commit 或 workflows.latest_commit_fixes
+  all:
+    keywords: ["全部", "全量", "所有测试", "回归"]
+    行为: 优先选择 validation.before_commit 或 local_iteration
+
+输出:
+  intent: latest_commit_fixes|latest_commit|all|default|custom
+  workflow_preference: [workflow_name...]
+  changed_files: [...]
+  command_filter: lint|test|typecheck|build|null
+  needs_confirmation: true|false
+```
+
 ### detect()
 
 ```yaml
@@ -120,16 +208,18 @@
   - 用户请求测试、迭代、部署、日志、远程检查
 
 流程:
-  1. 检查 {KB_ROOT}/project.yaml、project.local.yaml、secrets.local.yaml、runbook.yaml 是否存在
-  2. 解析可用环境、host_ref、workspace、命令和 workflows
-  3. 检查敏感信息泄露风险
-  4. 返回 project_env_context
+  1. 调用 resolveProjectContext(input, cwd)
+  2. 检查 {KB_ROOT}/project.yaml、project.local.yaml、secrets.local.yaml、runbook.yaml 是否存在
+  3. 解析可用环境、host_ref、workspace、命令、workflows、defaults 和 secret_profile
+  4. 检查敏感信息泄露风险
+  5. 返回 project_env_context
 
 返回:
   exists: true|false
   environments: [...]
   workflows: [...]
   validation_commands: [...]
+  defaults: {test_workflow, secret_profile}
   warnings: [...]
 ```
 
@@ -143,13 +233,16 @@
   2. 合并用户新提供的信息
   3. 缺少关键字段时追问：环境角色、host_ref、workspace、连接引用、日常命令
   4. 生成或更新 project.yaml / secrets.local.yaml / runbook.yaml
-  5. 检查 .gitignore 是否忽略 secrets.local.yaml、project.local.yaml、*.pem、*.key
-  6. 输出文件变更和安全提示
+  5. 写入或刷新 project.id、project.aliases、defaults.test_workflow、defaults.secret_profile
+  6. 写入或刷新 ~/.helloagents/projects.yaml 中的项目别名索引（不含敏感信息）
+  7. 检查 .gitignore 是否忽略 secrets.local.yaml、project.local.yaml、*.pem、*.key
+  8. 输出文件变更、安全提示和后续短命令示例
 
 验收:
   - project.yaml 至少包含 project、environments、paths 或 commands
   - secrets.local.yaml 至少包含 hosts 或 credential_refs（用户明确跳过敏感配置时可为空模板）
-  - runbook.yaml 至少包含 local_iteration 或 validation.before_commit
+  - runbook.yaml 至少包含 local_iteration、latest_commit_fixes 或 validation.before_commit
+  - 若存在明文密码输入，必须转为 password_ref 建议，不在输出中复述密码
 ```
 
 ### resolveWorkflow(name, environment)
@@ -178,15 +271,29 @@
   - Ralph Loop
 
 优先级:
-  1. runbook.yaml workflows.local_iteration.steps 中的 lint/test/typecheck/build 命令
-  2. runbook.yaml validation.before_commit
-  3. verify.yaml commands
-  4. package.json scripts
-  5. pyproject.toml 工具配置
+  1. 用户本轮明确命令或 workflow
+  2. resolveTestIntent(input, project_context) 选中的 workflow
+  3. runbook.yaml validation.before_commit
+  4. runbook.yaml validation.workflows.default / latest_commit
+  5. runbook.yaml workflows.*.default=true
+  6. runbook.yaml workflows.latest_commit_fixes
+  7. runbook.yaml workflows.local_iteration.steps 中的 lint/test/typecheck/build 命令
+  8. verify.yaml commands
+  9. package.json scripts
+  10. pyproject.toml 工具配置
 
 返回:
   commands: [...]
   source: runbook|verify|package_json|pyproject|auto
+  project_context: {...}
+  intent: {...}
+  workflow: string|null
+  requires_confirmation: true|false
+
+执行边界:
+  - 本地 workflow 且唯一命中时可作为推荐命令，减少重复确认
+  - remote/protected/production/requires_confirmation workflow 必须输出目标环境和命令预览并暂停确认
+  - command_ref 只能展开 project.yaml 中非敏感 commands；不得展开 secrets.local.yaml 中的真实值
 ```
 
 ---
@@ -210,6 +317,11 @@
   - 1password:item/field
   - keepass:path/to/entry
   - ssh-config:alias
+
+提示规则:
+  - 用户在 prompt 中提供明文密码时，不在回复、方案包、日志或知识库中复述
+  - 应提示用户改用 password_ref，例如 env:SITEGUARD_AI_PASSWORD
+  - 已暴露的密码建议轮换；后续命令只引用 password_ref 或 profile 名称
 
 明文密码处理:
   - dev/test: 输出警告，允许继续但要求 secrets.local.yaml 不提交

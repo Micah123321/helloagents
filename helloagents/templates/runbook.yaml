@@ -10,8 +10,29 @@ validation:
   #   - "npm test"
   #   - "npm run build"
   before_commit: []
+  workflows:
+    # default 用于 `~test`、DEVELOP 验证和 Hook 自动验证。
+    default: latest_commit_fixes
+    # latest_commit 用于“最新 commit / 最近提交 / 所有修复功能”等测试意图。
+    latest_commit: latest_commit_fixes
 
 workflows:
+  latest_commit_fixes:
+    description: 最新提交涉及修复功能的本地验证
+    default: true
+    environment: local
+    intent:
+      scope: latest_commit
+      keywords:
+        - 最新 commit
+        - 最近提交
+        - 本次提交
+        - 所有修复
+        - 修复功能
+    steps:
+      - name: test
+        command_ref: commands.local.test
+
   local_iteration:
     description: 本地日常开发验证
     environment: local

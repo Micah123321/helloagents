@@ -4,10 +4,17 @@
 version: 1
 
 project:
+  id: "{project_name}"
   name: "{project_name}"
   type: "{project_type}"
   root: "."
   default_environment: local
+  aliases:
+    - "{project_name}"
+
+defaults:
+  test_workflow: latest_commit_fixes
+  secret_profile: local
 
 environments:
   local:
