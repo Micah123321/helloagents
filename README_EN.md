@@ -8,10 +8,10 @@
 
 **Let AI go beyond analysis — keep pushing until implementation and verification are done.**
 
-[![Version](https://img.shields.io/badge/version-2.4.0-orange.svg)](./pyproject.toml)
+[![Version](https://img.shields.io/badge/version-2.4.1-orange.svg)](./pyproject.toml)
 [![npm](https://img.shields.io/npm/v/helloagents.svg)](https://www.npmjs.com/package/helloagents)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB.svg)](./pyproject.toml)
-[![Commands](https://img.shields.io/badge/commands-21-6366f1.svg)](./helloagents/functions)
+[![Commands](https://img.shields.io/badge/commands-22-6366f1.svg)](./helloagents/functions)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE.md)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
@@ -123,7 +123,7 @@ L1 project knowledge base (structured docs synced from code), context survives a
 
 **Extensibility & Customization**
 
-Voice notifications (5 event sounds), user-defined tool orchestration (sub-agents, skills, MCP servers, plugins), and flexible configuration options. All features work across 6 CLI targets with graceful degradation.
+Unified notifications with project and task context, user-defined tool orchestration (sub-agents, skills, MCP servers, plugins), and flexible configuration options. All features work across 6 CLI targets with graceful degradation.
 
 **Your gain:** tailor the workflow to your team's needs without forking the codebase.
 </td>
@@ -216,7 +216,7 @@ Additionally, HelloAGENTS provides: **five-dimension routing scoring** (action n
     helloagents version --force --cache-ttl 0
     helloagents status
 
-Expected package version: `2.4.0`; expected branch: `dev/2.3.8`.
+Expected package version: `2.4.1`; expected branch: `dev/2.3.8`.
 
 **Update:**
 
@@ -337,7 +337,9 @@ Customize workflow behavior via `~/.helloagents/helloagents.json` after installa
 | `EVAL_MODE` | int | `1` | Clarification mode: `1`=progressive (1 question/round, max 4), `2`=one-shot (all at once, max 2) |
 | `UPDATE_CHECK` | int | `72` | Update check cache TTL in hours: `0`=OFF |
 | `CSV_BATCH_MAX` | int | `16` | CSV batch max concurrency: `0`=OFF, cap 64 (Codex CLI only) |
-| `NOTIFY_LEVEL` | int | `2` | Notification mode: `0`=OFF, `1`=desktop, `2`=sound, `3`=desktop+sound; legacy `notify_level` is still supported |
+| `NOTIFY_LEVEL` | int | `2` | Notification mode: `0`=OFF, `1`=desktop, `2`=sound, `3`=desktop+sound; unified notifications include project name and task summary; legacy `notify_level` is still supported |
+
+Notifications are routed through `unified_notify.py`. When the main agent completes, waits for confirmation, warns, or errors, desktop and sound notifications use the same short context where possible, for example `Completed - goedge - login feature`; if system speech is unavailable, HelloAGENTS falls back to the bundled event sounds.
 
 **Example:**
 
@@ -642,7 +644,7 @@ Maintenance builds marked with `+m` / `-m` (for example `2.3.9-m`, Python metada
 
 - AGENTS.md: router and workflow protocol
 - SKILL.md: skill discovery metadata for CLI targets
-- pyproject.toml: package metadata (v2.4.0)
+- pyproject.toml: package metadata (v2.4.1)
 - helloagents/cli.py: CLI entry point
 - helloagents/_common.py: shared constants and utilities
 - helloagents/core/: CLI management modules (install, uninstall, update, status, dispatcher, hooks settings)
@@ -685,7 +687,7 @@ A: Yes. The project knowledge base is stored in the project-local `.helloagents/
 
 **Q: What are Hooks?**
 
-A: Lifecycle hooks auto-deployed during installation. Claude Code gets 11 event hooks (safety checks, dangerous command guard, progress snapshots, KB sync, sound notifications, tool failure recovery, etc.); Codex CLI gets a notify hook for update and sound notifications, but currently has no pre-execution dangerous-command hook; Gemini CLI gets 6 hooks (context injection, progress snapshots, sound notifications, pre-compression snapshots); Grok CLI gets 3 hooks (context injection, safety guard, progress snapshots). All optional — features degrade gracefully when hooks aren't available. No manual configuration needed.
+A: Lifecycle hooks auto-deployed during installation. Claude Code gets 11 event hooks (safety checks, dangerous command guard, progress snapshots, KB sync, unified notifications, tool failure recovery, etc.); Codex CLI gets a notify hook for update checks and unified notifications, but currently has no pre-execution dangerous-command hook; Gemini CLI gets 6 hooks (context injection, progress snapshots, unified notifications, pre-compression snapshots); Grok CLI gets 3 hooks (context injection, safety guard, progress snapshots). All optional — features degrade gracefully when hooks aren't available. No manual configuration needed.
 
 **Q: What is Agent Teams?**
 
@@ -791,7 +793,27 @@ A: An experimental Claude Code feature where multiple Claude Code instances coll
 
 ## Version History
 
-### v2.4.0 (current)
+### v2.4.1 (current)
+
+**Unified Notifications:**
+- Added `unified_notify.py` as the shared notification entry point, so sound and desktop notifications use the same project name and task summary, such as `Completed - helloagents - current task`
+- Codex `notify`, Claude Stop, and Gemini AfterAgent hooks now route through the unified entry point; Codex notifications from IDE clients remain silent
+- Sound notifications prefer system TTS for dynamic context and fall back to bundled event sounds; desktop notifications use the same context line
+- Windows Toast notifications now pass XML through `-EncodedCommand`, preventing notification content from being parsed as PowerShell command syntax
+
+**Workflow Experience:**
+- Completion footers can now offer 2-4 numbered next actions, prioritizing review, commit/verification, and concrete follow-up work based on the current change
+- `~commit` now shows the safe staging list after the user confirms the commit mode and no longer asks for the same staging range twice; sensitive files, empty lists, conflicts, or EHRB risks still pause for handling
+
+**Post-2.4.0 Enhancements:**
+- Added `~ssh` and ProjectEnvService for project environments, host references, remote paths, runbook validation commands, and sensitive credential-reference boundaries
+- Improved `~test` and Ralph Loop runbook parsing with project aliases, default `latest_commit_fixes` workflows, and safeguards that skip remote, production, or template-placeholder commands
+- `~review current changes` can detect the recent-change scope directly, then create and run the conservative fix path when review findings need code changes
+- R2 final clarification now merges with execution-mode confirmation, and pending confirmations can recover from interruptions and semantic replies like "continue" or "start review"
+- Plan package archival now syncs `tasks.md`, `LIVE_STATUS`, and `.status.json`, reducing manual cleanup after migration
+- Codex read-only sub-agents use isolated role config files, and the docs now clarify hook capability and safety boundaries
+
+### v2.4.0
 
 **6 New Workflow Commands (total 15→21):**
 - `~idea`: Lightweight tech exploration and comparison, read-only analysis (no file writes, no plan packages), ideal for quick evaluation before technology decisions

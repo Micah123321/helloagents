@@ -8,31 +8,32 @@
 
 HelloAGENTS 预定义以下 11 个 Hook 配置供用户可选启用:
 
-**声音通知触发原则（CRITICAL）:**
+**统一通知触发原则（CRITICAL）:**
 ```yaml
-仅主代理事件触发声音通知，子代理事件静默:
-  主代理事件（触发声音）: Stop 智能路由（Claude Code）、notify 智能路由（Codex CLI）、AfterAgent（Gemini CLI）、需要用户确认（Codex approval-requested）
+仅主代理事件触发统一通知，子代理事件静默:
+  主代理事件（触发通知）: Stop 智能路由（Claude Code）、notify 智能路由（Codex CLI）、AfterAgent（Gemini CLI）、需要用户确认（Codex approval-requested）
   子代理事件（静默）: 子代理内部任务执行、子代理轮次完成、子代理工具失败
-声音路由机制（Claude Code 两层检测）:
+通知路由机制（Claude Code 两层检测）:
   Layer 1 — stop_reason 检测（结构化信号，来自 Anthropic API，100% 可靠）:
-    stop_reason == "tool_use" → 静默退出（中间状态，不播放声音）
+    stop_reason == "tool_use" → 静默退出（中间状态，不通知）
     stop_reason == "end_turn" 或其他 → 继续 Layer 2
-  Layer 2 — G3 格式检测（语义信号，5 种声音事件）:
-    检测【HelloAGENTS】标记 → 提取状态图标 + 标记后状态文本 → 映射声音:
-      警告类（⚠️）          → warning ("需要注意~"，EHRB 风险警告)
-      错误类（❌）           → error   ("出错了呢~"，错误终止)
-      完成类（✅💡⚡🔧）    → complete ("完成了~")
-      确认类（❓📐）         → confirm ("需要您确认~"，始终为确认场景)
+  Layer 2 — G3 格式检测（语义信号，5 种通知事件）:
+    检测【HelloAGENTS】标记 → 提取状态图标 + 标记后状态文本 → 映射通知:
+      警告类（⚠️）          → warning ("需要注意"，EHRB 风险警告)
+      错误类（❌）           → error   ("出错了"，错误终止)
+      完成类（✅💡⚡🔧）    → complete ("完成了")
+      确认类（❓📐）         → confirm ("需要确认"，始终为确认场景)
       上下文类（🔵+状态含"确认"） → confirm (R2 确认，核心维度全部充分 等待模式选择)
-      上下文类（🔵+状态不含"确认"） → idle ("在等你呢~"，R2 追问/评估/执行等)
-      其余图标（ℹ️🚫等）    → idle    ("在等你呢~")
+      上下文类（🔵+状态不含"确认"） → idle ("在等你呢"，R2 追问/评估/执行等)
+      其余图标（ℹ️🚫等）    → idle    ("在等你呢")
       无 G3 格式            → complete（默认）
-  Claude Code: 从会话 JSONL 读取最后一条 assistant 消息的 text + stop_reason（stop_sound_router.py）
-  Codex CLI: 从 notify payload 的 last-assistant-message 字段读取（codex_notify.py，无 stop_reason 字段，仅 Layer 2）
-  Gemini CLI: AfterAgent 仅触发 complete（无消息检测）
+  消息内容: unified_notify.py 统一生成 "{事件} - {项目名} - {任务摘要}"，桌面通知和动态语音共用；系统语音不可用时降级内置事件音
+  Claude Code: Stop hook 由 stop_sound_router.py 兼容转发到 unified_notify.py，从会话 JSONL 读取最后一条 assistant 消息的 text + stop_reason
+  Codex CLI: codex_notify.py 根据 client 过滤后把 notify payload 转发到 unified_notify.py（无 stop_reason 字段，仅 Layer 2）
+  Gemini CLI: AfterAgent 调用 unified_notify.py --event complete
 子代理隔离:
   Claude Code: Stop 事件仅由主代理触发（架构保证）；PostToolUseFailure 不附带声音（无法区分代理上下文）
-  Codex CLI: notify 钩子在所有代理轮次（含子代理）触发，codex_notify.py 通过 G3 标记过滤子代理声音
+  Codex CLI: notify 钩子在所有代理轮次（含子代理）触发，codex_notify.py/unified_notify.py 通过 G3 标记过滤子代理通知
   Gemini CLI: AfterAgent 仅由主代理触发（架构保证）
 ```
 
@@ -123,11 +124,11 @@ notify = ["helloagents --check-update --silent"]
 ```
 
 `client` 字段（v0.107 新增）: TUI 报告 `codex-tui`，app-server 报告 `initialize.clientInfo.name`（如 `vscode`、`xcode`）。
-HelloAGENTS 的 `codex_notify.py` 根据 `client` 字段过滤：IDE 来源跳过声音通知（IDE 有自己的通知机制）。
-`agent-turn-complete` 事件通过 `last-assistant-message` 检测 G3 状态图标进行声音路由（与 Claude Code 的 stop_sound_router.py 共用映射逻辑）。
-notify 钩子在所有代理轮次触发（含子代理），codex_notify.py 声音过滤规则:
-  无【HelloAGENTS】标记 → 跳过声音（覆盖子代理输出和主代理无格式中间输出）
-  有【HelloAGENTS】标记 → 仅从输出末尾提取最后一个 G3 状态行的图标进行声音路由，忽略输出中间的历史标记
+HelloAGENTS 的 `codex_notify.py` 根据 `client` 字段过滤：IDE 来源跳过统一通知（IDE 有自己的通知机制）。
+`agent-turn-complete` 事件通过 `last-assistant-message` 检测 G3 状态图标，并转发给 `unified_notify.py` 生成项目名和任务摘要。
+notify 钩子在所有代理轮次触发（含子代理），Codex 通知过滤规则:
+  无【HelloAGENTS】标记 → 跳过通知（覆盖子代理输出和主代理无格式中间输出）
+  有【HelloAGENTS】标记 → 从最后一条 G3 状态行构建 "{事件} - {项目名} - {任务摘要}"
 
 ### 安全边界
 
@@ -239,9 +240,9 @@ PostToolUse — 进度快照（待验证）:
   超时: 10s | 异步: async=true
   注: Gemini CLI 对 PostToolUse 事件的支持待验证，部署后如不生效则依赖 cache.md 手动触发
 
-AfterAgent — KB 同步标志 + 声音通知:
+AfterAgent — KB 同步标志 + 统一通知:
   事件: AfterAgent（等效 Claude Code Stop）
-  动作: session_end.py，设置 KB 同步标志；sound_notify.py 播放完成声音
+  动作: session_end.py，设置 KB 同步标志；unified_notify.py --event complete 发送含项目上下文的通知
   超时: 10s
 
 PreCompress — 压缩前进度快照:

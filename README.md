@@ -8,10 +8,10 @@
 
 **让 AI 按流程完成需求评估、实现和验证。**
 
-[![Version](https://img.shields.io/badge/version-2.4.0-orange.svg)](./pyproject.toml)
+[![Version](https://img.shields.io/badge/version-2.4.1-orange.svg)](./pyproject.toml)
 [![npm](https://img.shields.io/npm/v/helloagents.svg)](https://www.npmjs.com/package/helloagents)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB.svg)](./pyproject.toml)
-[![Commands](https://img.shields.io/badge/commands-21-6366f1.svg)](./helloagents/functions)
+[![Commands](https://img.shields.io/badge/commands-22-6366f1.svg)](./helloagents/functions)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE.md)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
@@ -219,7 +219,7 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
     helloagents version --force --cache-ttl 0
     helloagents status
 
-预期版本为 `2.4.0`，分支为 `dev/2.3.8`。
+预期版本为 `2.4.1`，分支为 `dev/2.3.8`。
 
 **更新：**
 
@@ -348,7 +348,9 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
 | `EVAL_MODE` | int | `1` | 澄清提问模式：`1`=渐进式（每轮 1 题，最多 4 轮），`2`=一次性（所有未充分维度一起问，最多 2 轮） |
 | `UPDATE_CHECK` | int | `72` | 更新检查缓存有效期（小时）：`0`=关闭 |
 | `CSV_BATCH_MAX` | int | `16` | CSV 批量编排最大并发数：`0`=关闭，上限 64（仅 Codex CLI） |
-| `NOTIFY_LEVEL` | int | `2` | 通知模式：`0`=关闭，`1`=桌面通知，`2`=声音通知，`3`=桌面+声音；兼容旧键 `notify_level` |
+| `NOTIFY_LEVEL` | int | `2` | 通知模式：`0`=关闭，`1`=桌面通知，`2`=声音通知，`3`=桌面+声音；统一通知会携带项目名和任务摘要，兼容旧键 `notify_level` |
+
+通知由 `unified_notify.py` 统一处理。主代理完成、等待确认、警告或出错时，桌面通知和语音会尽量使用同一条短消息，例如 `完成了 - goedge - 登录功能`；无法使用系统语音时自动降级为内置事件音效。
 
 **示例：**
 
@@ -653,7 +655,7 @@ CHANGELOG 使用语义版本号（X.Y.Z），版本来源优先级：用户指�
 
 - AGENTS.md：路由与工作流协议
 - SKILL.md：CLI 目标的技能发现元数据
-- pyproject.toml：包元数据（v2.4.0）
+- pyproject.toml：包元数据（v2.4.1）
 - helloagents/cli.py：CLI 入口
 - helloagents/_common.py：共享常量与工具函数
 - helloagents/core/：CLI 管理模块（安装、卸载、更新、状态、调度器、钩子设置）
@@ -663,7 +665,7 @@ CHANGELOG 使用语义版本号（X.Y.Z），版本来源优先级：用户指�
 - helloagents/rules：状态机、缓存、工具、扩展、子代理协议
 - helloagents/rlm：角色库与编排辅助
 - helloagents/hooks：Claude Code、Codex CLI、Gemini CLI、Grok CLI Hooks 配置
-- helloagents/scripts：自动化脚本（声音通知、进度快照、安全防护等）
+- helloagents/scripts：自动化脚本（统一通知、进度快照、安全防护等）
 - helloagents/agents：子代理定义（3 个 RLM 角色）
 - helloagents/assets：音频资源（5 种事件音效）
 - helloagents/templates：KB 和方案模板
@@ -696,7 +698,7 @@ CHANGELOG 使用语义版本号（X.Y.Z），版本来源优先级：用户指�
 
 **问：什么是 Hooks？**
 
-答：安装时自动部署的生命周期钩子。Claude Code 有 11 个事件钩子（安全检查、危险命令防护、进度快照、KB 同步、语音通知、工具失败恢复等）；Codex CLI 有 notify 钩子用于更新检查和语音通知，目前没有执行前危险命令拦截钩子；Gemini CLI 有 6 个钩子（上下文注入、进度快照、语音通知、压缩前快照）；Grok CLI 有 3 个钩子（上下文注入、安全防护、进度快照）。全部可选——无 Hooks 时功能自动降级，无需手动配置。
+答：安装时自动部署的生命周期钩子。Claude Code 有 11 个事件钩子（安全检查、危险命令防护、进度快照、KB 同步、统一通知、工具失败恢复等）；Codex CLI 有 notify 钩子用于更新检查和统一通知，目前没有执行前危险命令拦截钩子；Gemini CLI 有 6 个钩子（上下文注入、进度快照、统一通知、压缩前快照）；Grok CLI 有 3 个钩子（上下文注入、安全防护、进度快照）。全部可选——无 Hooks 时功能自动降级，无需手动配置。
 
 **问：什么是 Agent Teams？**
 
@@ -802,7 +804,27 @@ CHANGELOG 使用语义版本号（X.Y.Z），版本来源优先级：用户指�
 
 ## 版本历史
 
-### v2.4.0（当前）
+### v2.4.1（当前）
+
+**统一通知：**
+- 新增 `unified_notify.py` 统一通知入口，声音和桌面通知共用项目名与任务摘要，支持 `完成了 - helloagents - 当前任务` 这类短上下文消息
+- Codex `notify`、Claude Stop 和 Gemini AfterAgent Hook 统一转发到新入口；IDE 来源的 Codex 通知继续静默跳过
+- 默认声音通知优先使用系统 TTS 播放动态上下文，失败时降级到内置事件音效；桌面通知沿用同一条消息
+- Windows Toast 通知改用 `-EncodedCommand` 传递 XML，避免通知内容被 PowerShell 当作命令语法解析
+
+**工作流体验：**
+- 完成态 `🔄 下一步` 支持 2-4 个编号动作，优先给出审查、提交/验证和基于本次改动的具体延伸动作
+- `~commit` 在用户确认提交方式后只展示安全暂存清单，不再对同一暂存范围二次确认；敏感文件、空清单、冲突或 EHRB 风险仍会暂停
+
+**2.4.0 后续增强汇总：**
+- 新增 `~ssh` 和 ProjectEnvService，可记录项目环境、host 引用、远程路径、runbook 验证命令和敏感凭据引用边界
+- 增强 `~test`/Ralph Loop 的 runbook 解析，支持项目别名、默认 `latest_commit_fixes` workflow，并跳过远程、生产或模板占位符命令
+- `~review 审查本次改动` 可直接识别最近改动范围，审查发现问题后默认创建并执行保守修复方案
+- R2 最后一轮追问与执行模式确认合一，确认类 pending 回复支持中断恢复和“继续/确认/开始审查”等语义匹配
+- 方案包归档会同步 tasks.md、LIVE_STATUS 和 `.status.json` 状态，减少归档后的手动修正
+- Codex 只读子代理使用独立 role config 收紧权限边界，文档同步明确 Hook 能力和安全边界
+
+### v2.4.0
 
 **新增 6 个工作流命令（命令总数 15→21）：**
 - `~idea`：轻量技术探索与方向对比，纯只读分析（不写文件、不创建方案包），适用于技术选型前的快速评估

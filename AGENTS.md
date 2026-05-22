@@ -39,7 +39,7 @@ BILINGUAL_COMMIT: 1  # 0=仅 OUTPUT_LANGUAGE, 1=OUTPUT_LANGUAGE + English
 EVAL_MODE: 1  # 1=PROGRESSIVE（渐进式追问，默认）, 2=ONESHOT（一次性追问）
 UPDATE_CHECK: 72  # 0=OFF（关闭更新检查），正整数=缓存有效小时数（默认 72）
 CSV_BATCH_MAX: 16  # 0=OFF（关闭 CSV 批处理编排），正整数=最大并发数（默认 16，上限 64，仅 Codex CLI）
-NOTIFY_LEVEL: 2  # 0=off, 1=desktop, 2=sound, 3=both（桌面/声音通知模式）
+NOTIFY_LEVEL: 2  # 0=off, 1=desktop, 2=sound, 3=both（统一通知模式，含项目名和任务摘要）
 ```
 
 **开关行为摘要:**
@@ -57,8 +57,8 @@ NOTIFY_LEVEL: 2  # 0=off, 1=desktop, 2=sound, 3=both（桌面/声音通知模式
 | CSV_BATCH_MAX | 0 | 关闭 CSV 批处理编排，同构任务退回 spawn_agent 逐个执行 |
 | CSV_BATCH_MAX | N (正整数) | CSV 批处理最大并发数（默认 16，上限 64），仅 Codex CLI 生效，其他 CLI 忽略 |
 | NOTIFY_LEVEL | 0 | 关闭通知 |
-| NOTIFY_LEVEL | 1 | 桌面通知 |
-| NOTIFY_LEVEL | 2 | 声音通知（默认） |
+| NOTIFY_LEVEL | 1 | 桌面通知（含项目名和任务摘要） |
+| NOTIFY_LEVEL | 2 | 声音通知（默认，优先动态语音，失败降级事件音） |
 | NOTIFY_LEVEL | 3 | 桌面+声音通知 |
 
 > 例外: ~init 显式调用时忽略 KB_CREATE_MODE 开关
@@ -299,15 +299,26 @@ PowerShell 语法规范（仅在 Bash 不可用时使用）:
 触发: R1/R2/~auto/~exec 等实现类任务完成，且本次流程产生代码、配置、规则、模板或知识库变更
 优先级:
   1. 若仍有必须完成的功能、阻断性失败、未完成的核心验收项或用户明确要求的下一项工作 → `🔄 下一步` 必须推荐先完成该具体事项
-  2. 若没有必须完成的事项，且本次流程产生代码、配置、规则、模板或知识库变更 → `🔄 下一步` 推荐运行 `~review` 审查本次改动
-推荐 review 文案: "运行 `~review` 审查本次改动。"
+  2. 若没有必须完成的事项，且本次流程产生代码、配置、规则、模板或知识库变更 → `🔄 下一步` 给出 2-4 个具体可选动作
+选项生成:
+  - 第 1 项优先放质量闭环动作，如 `~review` 审查本次改动、运行相关验证或修复阻断项
+  - 第 2 项放交付推进动作，如 `~commit`、继续验证、部署前检查或执行用户当前目标中的下一步
+  - 第 3-4 项可放"拓展相关功能"、体验增强、自动化补强、文档/模板完善等启发式推荐，但必须直接基于本次改动的上下文生成
+  - 拓展推荐必须具体到可执行方向，例如"把 ~commit 的单次确认规则同步到推送/PR 子流程边界测试"，不得写成"继续优化"、"做更多改进"等泛化表达
+  - 有明确未完成事项时只推荐该事项，不追加拓展选项，避免稀释优先级
+格式:
+  - 推荐必须仍写在 G3 的 `🔄 下一步` 行中
+  - 多选项格式: `🔄 下一步: 选项：1. ...；2. ...；3. ...`
+  - 数字选项表示用户可回复编号触发对应动作；编号动作必须能被后续输入解析为具体请求
+推荐 review 文案: "1. 运行 `~review` 审查本次改动"
 ~review 行为: 用户按推荐输入 `~review 审查本次改动` 或表达“本次改动/最近改动/最近修改/当前改动/本轮改动/这次改动”时，`~review` 自动解析最近改动范围并直接进入审查；无变更、范围冲突或语义不明确时再询问。
 例外:
   - 当前流程是 `~review` 或 `~verify` 完成 → 不重复推荐 `~review`，改为推荐提交、部署前验证或用户当前目标中的下一个具体动作
   - 本次流程无文件变更、纯问答、纯状态查看或已取消/失败 → 根据实际状态给出具体下一步，不推荐 `~review`
 约束:
-  - 推荐必须写在 G3 的 `🔄 下一步` 行中，不得在下一步之后追加泛化客套
+  - 不得在下一步之后追加泛化客套
   - 不得把推荐写成拆单交付或留一手；已完成的工作照常完整报告
+  - 拓展选项必须服务于用户目标或当前改动的自然延伸；不得为制造选择而推荐无关工作
 ```
 
 **主体内容规范:**
@@ -1119,7 +1130,7 @@ HelloAGENTS 支持通过 CLI 原生 Hooks 系统增强以下功能。Hooks 为�
 | 审批传播 | — | 父→子自动传播，可按类型拒绝 | — | — | 手动配置 |
 | 危险命令防护 | PreToolUse (Bash) | — | PreToolUse (Bash) (待验证) | PreToolUse (Bash) (待验证) | 主代理安全意识 |
 | 会话结束清理 | SessionEnd | — | AfterAgent | — | Stop 降级 |
-| 声音通知 | Stop (stop_sound_router.py) | notify (codex_notify.py) | AfterAgent | — (待验证) | terminal bell |
+| 统一通知（声音+桌面） | Stop → unified_notify.py | notify → unified_notify.py | AfterAgent → unified_notify.py | — (待验证) | terminal bell |
 | 工具失败恢复 | PostToolUseFailure | — | — | — | 手动排查 |
 | Hook 阻断降级 | 被阻断→主代理执行 | 不适用 | 被阻断→主代理执行 | 被阻断→主代理执行 | 直接执行 |
 

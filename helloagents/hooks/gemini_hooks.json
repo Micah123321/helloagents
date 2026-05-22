@@ -40,17 +40,10 @@
           },
           {
             "type": "command",
-            "command": "python3 \"{SCRIPTS_DIR}/sound_notify.py\" complete",
+            "command": "python3 \"{SCRIPTS_DIR}/unified_notify.py\" --event complete",
             "async": false,
             "timeout": 5,
-            "description": "HelloAGENTS 声音通知（完成）"
-          },
-          {
-            "type": "command",
-            "command": "python3 \"{SCRIPTS_DIR}/notify.py\"",
-            "async": false,
-            "timeout": 5,
-            "description": "HelloAGENTS 桌面通知（完成）"
+            "description": "HelloAGENTS 统一通知（完成，含项目和任务上下文）"
           }
         ]
       }
