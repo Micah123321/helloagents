@@ -83,7 +83,7 @@
 
 **RLM Sub-Agent Orchestration**
 
-3 specialized roles (reviewer / writer / brainstormer) plus host CLI native sub-agents (explore / code / brainstorm) are dispatched automatically based on task complexity. Tasks are scheduled via DAG dependency analysis with topological sort and layer-by-layer parallel dispatch. Supports cross-CLI parallel scheduling and Agent Teams collaboration.
+3 specialized roles (reviewer / writer / brainstormer) plus host CLI native sub-agents (explore / code / brainstorm) are dispatched automatically based on independent work units and parallelization value, without requiring the user to explicitly ask for "sub-agents" or "parallel agents". Tasks are scheduled via DAG dependency analysis with topological sort and layer-by-layer parallel dispatch. Supports cross-CLI parallel scheduling and Agent Teams collaboration.
 
 **Your gain:** complex tasks are broken down and handled by the right specialist, with parallel execution when possible.
 </td>
@@ -419,7 +419,7 @@ Ask all clarification questions at once (max 2 rounds) instead of progressive mo
 1. **Install & Deploy** — Run `helloagents` to select target CLI, auto-deploys config files and hooks
 2. **Smart Routing** — Every input is auto-scored; simple queries get direct answers, complex tasks enter structured workflow
 3. **Stage Progression** — Complex tasks advance through "Evaluate → Design → Develop" stages, each with clear deliverables
-4. **Auto Orchestration** — System dispatches sub-agents and specialized roles based on complexity, parallelizes when possible
+4. **Auto Orchestration** — System dispatches sub-agents and specialized roles based on independent work units and parallelization value, parallelizes when possible
 5. **Safety Guard** — Each step scans for destructive operations, risky actions require user confirmation, and CLIs with PreToolUse support block typical dangerous commands before execution
 6. **Memory Retention** — User preferences, project knowledge, session context persist across sessions
 7. **Verified Completion** — Stage chain completes with verified output, auto-syncs knowledge base
