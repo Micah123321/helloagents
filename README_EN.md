@@ -8,7 +8,7 @@
 
 **Let AI go beyond analysis — keep pushing until implementation and verification are done.**
 
-[![Version](https://img.shields.io/badge/version-2.4.1-orange.svg)](./pyproject.toml)
+[![Version](https://img.shields.io/badge/version-2.4.2-orange.svg)](./pyproject.toml)
 [![npm](https://img.shields.io/npm/v/helloagents.svg)](https://www.npmjs.com/package/helloagents)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB.svg)](./pyproject.toml)
 [![Commands](https://img.shields.io/badge/commands-22-6366f1.svg)](./helloagents/functions)
@@ -216,7 +216,7 @@ Additionally, HelloAGENTS provides: **five-dimension routing scoring** (action n
     helloagents version --force --cache-ttl 0
     helloagents status
 
-Expected package version: `2.4.1`; expected branch: `dev/2.3.8`.
+Expected package version: `2.4.2`; expected branch: `dev/2.3.8`.
 
 **Update:**
 
@@ -644,7 +644,7 @@ Maintenance builds marked with `+m` / `-m` (for example `2.3.9-m`, Python metada
 
 - AGENTS.md: router and workflow protocol
 - SKILL.md: skill discovery metadata for CLI targets
-- pyproject.toml: package metadata (v2.4.1)
+- pyproject.toml: package metadata (v2.4.2)
 - helloagents/cli.py: CLI entry point
 - helloagents/_common.py: shared constants and utilities
 - helloagents/core/: CLI management modules (install, uninstall, update, status, dispatcher, hooks settings)
@@ -793,7 +793,14 @@ A: An experimental Claude Code feature where multiple Claude Code instances coll
 
 ## Version History
 
-### v2.4.1 (current)
+### v2.4.2 (current)
+
+**Prompt Optimization:**
+- Added minimization ladder (7-step pre-coding self-check: YAGNI→reuse→stdlib→native→deps→shrink→minimal)
+- Added simplification annotation convention (`ha-min:` comments for intentional shortcuts with known ceilings)
+- Added over-engineering prohibition rules (one-implementation interfaces, speculative scaffolding, redundant config, etc.)
+- Added YAGNI constraints and self-test requirement for non-trivial code in quality floor
+- Extended review/verify dimensions with simplification/over-engineering audit using standardized tags (delete/stdlib/native/yagni/shrink)
 
 **Unified Notifications:**
 - Added `unified_notify.py` as the shared notification entry point, so sound and desktop notifications use the same project name and task summary, such as `Completed - helloagents - current task`

@@ -1,6 +1,6 @@
 {
   "name": "helloagents",
-  "version": "2.4.1",
+  "version": "2.4.2",
   "type": "module",
   "description": "HelloAGENTS - multi-CLI workflow rules and installer",
   "author": "HelloWind",

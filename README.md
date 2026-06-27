@@ -8,7 +8,7 @@
 
 **让 AI 按流程完成需求评估、实现和验证。**
 
-[![Version](https://img.shields.io/badge/version-2.4.1-orange.svg)](./pyproject.toml)
+[![Version](https://img.shields.io/badge/version-2.4.2-orange.svg)](./pyproject.toml)
 [![npm](https://img.shields.io/npm/v/helloagents.svg)](https://www.npmjs.com/package/helloagents)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB.svg)](./pyproject.toml)
 [![Commands](https://img.shields.io/badge/commands-22-6366f1.svg)](./helloagents/functions)
@@ -219,7 +219,7 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
     helloagents version --force --cache-ttl 0
     helloagents status
 
-预期版本为 `2.4.1`，分支为 `dev/2.3.8`。
+预期版本为 `2.4.2`，分支为 `dev/2.3.8`。
 
 **更新：**
 
@@ -655,7 +655,7 @@ CHANGELOG 使用语义版本号（X.Y.Z），版本来源优先级：用户指�
 
 - AGENTS.md：路由与工作流协议
 - SKILL.md：CLI 目标的技能发现元数据
-- pyproject.toml：包元数据（v2.4.1）
+- pyproject.toml：包元数据（v2.4.2）
 - helloagents/cli.py：CLI 入口
 - helloagents/_common.py：共享常量与工具函数
 - helloagents/core/：CLI 管理模块（安装、卸载、更新、状态、调度器、钩子设置）
@@ -804,7 +804,14 @@ CHANGELOG 使用语义版本号（X.Y.Z），版本来源优先级：用户指�
 
 ## 版本历史
 
-### v2.4.1（当前）
+### v2.4.2（当前）
+
+**提示词优化：**
+- 新增最小化阶梯（编码前 7 步自检：YAGNI→复用→标准库→原生→依赖→精简→最少代码）
+- 新增简化标注注释（`ha-min:` 约定，标记有意简化的上限和升级路径）
+- 新增过度工程禁止规则（禁止一个实现者的接口、猜测性脚手架、冗余配置项等）
+- 产出标准补充 YAGNI 约束和非平凡代码自检要求
+- 审查维度扩展简化/过度工程维度，使用标准化标签体系（delete/stdlib/native/yagni/shrink）
 
 **统一通知：**
 - 新增 `unified_notify.py` 统一通知入口，声音和桌面通知共用项目名与任务摘要，支持 `完成了 - helloagents - 当前任务` 这类短上下文消息
