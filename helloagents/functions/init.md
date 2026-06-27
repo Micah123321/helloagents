@@ -125,3 +125,14 @@ Codex CLI 配置（自动检测，非 Codex 环境跳过）:
 | 权限不足 | 输出: 错误，建议检查权限 |
 | 扫描超时（大型项目） | 分批处理，输出进度提示 |
 | 无法识别项目类型 | 询问用户提供技术栈信息 |
+
+---
+
+## 交付检查
+
+- [ ] 知识库核心文件存在且非空（INDEX.md / context.md / CHANGELOG.md / modules/_index.md）
+- [ ] 技术栈已识别（未识别已标注并请求用户补充）
+- [ ] 模块覆盖完整，核心模块均有对应 modules/*.md
+- [ ] Markdown 格式正确，Mermaid 图表可渲染
+- [ ] 无敏感信息泄露到知识库
+- [ ] .gitignore 检查已完成（已提示将 .helloagents/ 纳入或创建 .gitignore）

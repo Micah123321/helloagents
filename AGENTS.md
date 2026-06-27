@@ -995,7 +995,8 @@ Scope: This rule applies to ALL ⛔ END_TURN marks in ALL modules, no exceptions
 | DESIGN Phase1 按需 | services/project-env.md（存在项目环境配置或涉及测试/迭代/服务器时）, services/knowledge.md（KB_SKIPPED=false）, rules/scaling.md（TASK_COMPLEXITY=complex，在步骤3设置后按条件加载）, rules/tools.md（project_stats.py 调用时） |
 | DESIGN Phase2 按需 | services/package.md, services/templates.md, rules/state.md |
 | R2 进入开发实施（入口） | stages/develop.md, services/package.md |
-| DEVELOP 按需 | services/project-env.md（验证命令探测时）, services/knowledge.md（KB_SKIPPED=false）, services/attention.md（进度快照时）, rules/cache.md, rules/state.md |
+| DEVELOP 按需 | services/project-env.md（验证命令探测时）, services/knowledge.md（KB_SKIPPED=false）, services/attention.md（进度快照时）, rules/cache.md, rules/state.md, rules/coding-checklists.md（编码与验证阶段，步骤6-9） |
+| 调试时（bug修复/失败测试/异常排查） | rules/debug.md（四阶段调试法+卡住升级阶梯，develop/~test/~verify 失败处理场景加载） |
 | ~auto | functions/auto.md |
 | ~plan | functions/plan.md |
 | ~exec | functions/exec.md, rules/tools.md |

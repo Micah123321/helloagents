@@ -199,3 +199,14 @@ BILINGUAL_COMMIT=1: 本地语言块在上，英文块在下，用 --- 分隔，�
 | 功能分支 | feature/*, fix/* | 推送后提示创建PR |
 | 破坏性变更 | 删除公共API、修改数据结构 | type 后添加 !，footer 添加 BREAKING CHANGE |
 | 回滚 | 用户说"回滚上次提交" | git revert HEAD，type=revert |
+
+---
+
+## 交付检查
+
+- [ ] 提交信息符合 Conventional Commits 规范（emoji + type + scope + summary）
+- [ ] 暂存前已排除敏感文件（.env / *credential* / *secret* / *.pem / *.key 等）
+- [ ] 未使用 `git add .` 暴力暂存，而是分步或按具体路径暂存
+- [ ] 公共 API/数据模型变更已同步知识库文档（未同步有 ⚠️ 警告且原因已说明）
+- [ ] 推送前已 `git fetch` 检查远程领先/分叉状态，冲突已处理或提示
+- [ ] 实际提交哈希已返回，未声称完成但未提交
