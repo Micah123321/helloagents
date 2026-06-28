@@ -225,29 +225,16 @@ def _latest_release_api(repo_url: str) -> str:
     return f"https://api.github.com/repos/{owner}/{name}/releases/latest"
 
 
-def fetch_latest_version(branch: str | None = None, timeout: int = 5,
-                         repo_url: str | None = None,
-                         allow_release: bool = True,
-                         local_ver: str | None = None) -> str:
-    """Unified remote version fetching (deduplicates check_update & update logic).
+def _fetch_version_for_branch(branch: str, repo_url: str | None = None,
+                              timeout: int = 3,
+                              allow_release: bool = True) -> str:
+    """Fetch the remote version from a single branch.
 
-    For 'main' branch: tries GitHub Releases API first, falls back to pyproject.toml.
-    For other branches: fetches from pyproject.toml directly.
-
-    Args:
-        branch: Git branch name. If omitted, detects install branch or
-            maintenance-channel default from local_ver.
-        timeout: HTTP timeout for the Releases API call (seconds).
-        repo_url: Repository URL. Defaults to the install source in direct_url.json.
-        allow_release: If False, skip releases/latest even for main.
-        local_ver: Optional local version used when branch must be inferred.
-
-    Returns:
-        Remote version string, or empty string on failure.
+    For 'main': tries GitHub Releases API, then pyproject.toml on main.
+    For other branches: fetches pyproject.toml directly.
+    Returns the version string, or '' on failure.
     """
-    branch = branch or _detect_channel(local_ver)
     repo_url = repo_url or _get_repo_url()
-    remote_ver = ""
     if branch == "main" and allow_release:
         try:
             req = Request(_latest_release_api(repo_url), headers={
@@ -257,19 +244,141 @@ def fetch_latest_version(branch: str | None = None, timeout: int = 5,
             with urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 remote_ver = data.get("tag_name", "").lstrip("v")
+            if remote_ver:
+                return remote_ver
         except Exception:
             pass
-        if not remote_ver:
-            try:
-                remote_ver = _fetch_remote_version("main", repo_url, timeout)
-            except Exception:
-                pass
-    else:
         try:
-            remote_ver = _fetch_remote_version(branch, repo_url, timeout)
+            return _fetch_remote_version("main", repo_url, timeout)
+        except Exception:
+            return ""
+    try:
+        return _fetch_remote_version(branch, repo_url, timeout)
+    except Exception:
+        return ""
+
+
+def _branch_from_commit_id(repo_url: str | None = None,
+                           timeout: int = 3) -> str:
+    """Reverse-lookup the branch whose tip is the installed commit.
+
+    Uses GitHub's ``commits/{sha}/branches-where-head`` API. Returns a hit only
+    when the installed commit is still the tip of some branch (e.g. right after
+    install, before the branch advances past it). Returns '' otherwise — callers
+    then fall back to the maintenance-branch probe.
+    """
+    repo = _parse_github_repo(repo_url or _get_repo_url())
+    if not repo:
+        return ""
+    owner, name = repo
+    sha = _local_commit_id()
+    if not sha:
+        return ""
+    url = (f"https://api.github.com/repos/{owner}/{name}/commits/"
+           f"{quote(sha, safe='')}/branches-where-head")
+    req = Request(url, headers={
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "helloagents-update-checker",
+    })
+    with urlopen(req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    if isinstance(data, list) and data:
+        return data[0].get("name", "") or ""
+    return ""
+
+
+def _probe_version(candidates: list[str], repo_url: str, timeout: int,
+                   allow_release: bool = True) -> str:
+    """Return the first non-empty version across candidate branches."""
+    for branch in candidates:
+        if not branch:
+            continue
+        try:
+            v = _fetch_version_for_branch(branch, repo_url, timeout, allow_release)
+        except Exception:
+            v = ""
+        if v:
+            return v
+    return ""
+
+
+def fetch_latest_version(branch: str | None = None, timeout: int = 5,
+                         repo_url: str | None = None,
+                         allow_release: bool = True,
+                         local_ver: str | None = None) -> str:
+    """Unified remote version fetching with fork-recovery fallbacks.
+
+    Fast path: fetch from the detected branch. Recovery path (when the detected
+    branch yields no version — e.g. a fork whose default main branch is absent
+    and direct_url.json didn't record the branch): reverse-lookup the branch from
+    the installed commit, then probe the maintenance channel. This restores
+    version visibility for fork installs without touching the metadata default.
+
+    Args:
+        branch: Git branch name. If omitted, detects install branch or
+            maintenance-channel default from local_ver.
+        timeout: HTTP timeout (seconds).
+        repo_url: Repository URL. Defaults to the install source in direct_url.json.
+        allow_release: If False, skip releases/latest even for main.
+        local_ver: Optional local version used when branch must be inferred.
+
+    Returns:
+        Remote version string, or empty string on failure.
+    """
+    branch = branch or _detect_channel(local_ver)
+    repo_url = repo_url or _get_repo_url()
+
+    # Fast path: the detected branch carries the version.
+    remote_ver = _fetch_version_for_branch(
+        branch, repo_url, timeout, allow_release)
+    if remote_ver:
+        return remote_ver
+
+    # Recovery: metadata branch absent/unreachable (common for fork installs
+    # where direct_url.json omits the branch). Try the commit-derived branch,
+    # then the maintenance channel.
+    candidates: list[str] = []
+    resolved = ""
+    try:
+        resolved = _branch_from_commit_id(repo_url, timeout=timeout)
+    except Exception:
+        resolved = ""
+    if resolved and resolved != branch:
+        candidates.append(resolved)
+    if MAINTENANCE_BRANCH != branch and MAINTENANCE_BRANCH != resolved:
+        candidates.append(MAINTENANCE_BRANCH)
+    return _probe_version(candidates, repo_url, timeout, allow_release=True)
+
+
+def _resolve_branch(local_ver: str | None = None,
+                    repo_url: str | None = None,
+                    timeout: int = 5) -> str:
+    """Resolve the real source branch to install updates from.
+
+    Used by update() so the git install URL points at a branch that actually
+    carries the code — fixes forks whose default main branch is absent. Priority:
+    commit reverse-lookup -> metadata branch -> maintenance channel -> metadata default.
+    """
+    repo_url = repo_url or _get_repo_url()
+    meta_branch = _detect_channel(local_ver)
+    candidates: list[str] = []
+    resolved = ""
+    try:
+        resolved = _branch_from_commit_id(repo_url, timeout=timeout)
+        if resolved and resolved != meta_branch:
+            candidates.append(resolved)
+    except Exception:
+        resolved = ""
+    candidates.append(meta_branch)
+    if MAINTENANCE_BRANCH != meta_branch and MAINTENANCE_BRANCH != resolved:
+        candidates.append(MAINTENANCE_BRANCH)
+    for branch in candidates:
+        try:
+            if _fetch_version_for_branch(branch, repo_url, timeout, allow_release=True):
+                return branch
         except Exception:
             pass
-    return remote_ver
+    return meta_branch
 
 
 # ---------------------------------------------------------------------------

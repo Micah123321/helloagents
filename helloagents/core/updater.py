@@ -12,6 +12,7 @@ from .._common import (
 from .version_check import (
     _detect_channel, _local_commit_id, _remote_commit_id,
     _get_repo_url, _version_newer, _write_update_cache, fetch_latest_version,
+    _resolve_branch,
 )
 from .win_helpers import (
     _cleanup_pip_remnants, _win_cleanup_bak,
@@ -151,7 +152,7 @@ def update(switch_branch: str | None = None) -> None:
     except Exception:
         pass
 
-    branch = switch_branch or _detect_channel(local_ver)
+    branch = switch_branch or _resolve_branch(local_ver)
     repo_url = _get_repo_url()
 
     # Fetch remote version (unified helper — deduplicates old inline logic)
