@@ -143,42 +143,44 @@ Codex CLI 当前没有等效 Claude Code 的 `PreToolUse(Bash)` 执行前危险�
 agents.max_threads = 16   # 最大并发子代理线程数
 agents.max_depth = 1      # 嵌套深度（默认 1）
 
-# 原生角色（每个角色独立配置，模型名按实际可用模型填写）
+# 模型默认策略（重要）: 子代理默认继承主代理模型，无需为每个角色单独设 model。
+# 只有当某角色确实需要降级（如 explorer 用轻量模型省成本）时，才在对应 [agents.xxx]
+# 节显式设 model。不设 model = 继承顶层（主代理）model。
+#
+# 下面示例默认不写 model；注释掉的 model 行仅为"如需降级时"的参考，非默认建议。
+
 [agents.explorer]
 description = "代码探索和依赖分析"
-model = "<轻量模型名>"
-model_reasoning_effort = "medium"
+# model = "<轻量模型名>"          # 可选: explorer 可降级到轻量模型省成本；不写则继承主代理
+# model_reasoning_effort = "medium"
 nickname_candidates = ["探索者", "Scout", "Pathfinder"]
 
 [agents.worker]
 description = "代码实现和修改"
-model = "<主力模型名>"
-model_reasoning_effort = "high"
+# 默认继承主代理模型（不设 model）；实现类任务通常需要主力模型能力，不建议降级
 nickname_candidates = ["工匠", "Builder", "Forge"]
 
 [agents.monitor]
 description = "长时间运行的监控和轮询任务"
-model = "<轻量模型名>"
-model_reasoning_effort = "low"
+# model = "<轻量模型名>"          # 可选: monitor 轮询任务可降级；不写则继承主代理
+# model_reasoning_effort = "low"
 nickname_candidates = ["哨兵", "Watcher", "Radar"]
 
 # HelloAGENTS RLM 角色
 [agents.reviewer]
 description = "代码审查和质量检查"
-model = "<主力模型名>"
-model_reasoning_effort = "high"
+config_file = "agents/helloagents-readonly-reviewer.toml"
+# 默认继承主代理模型；config_file 只设 sandbox_mode，不含 model，保持继承
 nickname_candidates = ["审查员", "Inspector", "Sentinel"]
 
 [agents.writer]
 description = "独立文档生成与编写"
-model = "<主力模型名>"
-model_reasoning_effort = "high"
+# 默认继承主代理模型
 nickname_candidates = ["笔者", "Scribe", "Quill"]
 
 [agents.brainstormer]
 description = "方案构思与差异化设计"
-model = "<主力模型名>"
-model_reasoning_effort = "high"
+# 默认继承主代理模型
 nickname_candidates = ["缪斯", "Muse", "Ideator"]
 ```
 

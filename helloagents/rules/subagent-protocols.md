@@ -34,6 +34,13 @@ Claude Code agent 文件（安装时部署至 ~/.claude/agents/）:
 复杂度角色: TASK_COMPLEXITY 影响编排深度和强度（reviewer 调度、验证范围、测试覆盖），不影响是否编排
 R1 例外: R1 快速流程为单点操作，天然仅 1 个工作单元，不触发子代理编排
 边界保持: 主动编排不得绕过确认、EHRB、职责隔离、阻塞等待、结果真实性、降级处理或主代理汇总决策规则
+
+CLI 一致性（CRITICAL）:
+  本原则 CLI 无关——Claude Code、Codex CLI 及其他 CLI 在满足触发条件时均应主动编排，
+  仅"调用通道"和"环境前置检测"不同（Claude 用 Task 工具；Codex 用 spawn_agent/CSV，需 /experimental 开启）。
+  各 CLI 的稳定性策略、降级阈值、上下文预算机制是"编排失败后的兜底"，
+  统计的是已发生的 spawn→close 失败/循环，不构成"编排前预判回避子代理"的理由。
+  不得因某 CLI 有失败兜底机制就在编排前默认走主代理直接执行。
 ```
 
 ### 强制调用规则

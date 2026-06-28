@@ -8,7 +8,7 @@
 
 **Let AI go beyond analysis — keep pushing until implementation and verification are done.**
 
-[![Version](https://img.shields.io/badge/version-2.4.2-orange.svg)](./pyproject.toml)
+[![Version](https://img.shields.io/badge/version-2.4.3-orange.svg)](./pyproject.toml)
 [![npm](https://img.shields.io/npm/v/helloagents.svg)](https://www.npmjs.com/package/helloagents)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB.svg)](./pyproject.toml)
 [![Commands](https://img.shields.io/badge/commands-22-6366f1.svg)](./helloagents/functions)
@@ -216,7 +216,7 @@ Additionally, HelloAGENTS provides: **five-dimension routing scoring** (action n
     helloagents version --force --cache-ttl 0
     helloagents status
 
-Expected package version: `2.4.2`; expected branch: `dev/2.3.8`.
+Expected package version: `2.4.3`; expected branch: `dev/2.3.8`.
 
 **Update:**
 
@@ -644,7 +644,7 @@ Maintenance builds marked with `+m` / `-m` (for example `2.3.9-m`, Python metada
 
 - AGENTS.md: router and workflow protocol
 - SKILL.md: skill discovery metadata for CLI targets
-- pyproject.toml: package metadata (v2.4.2)
+- pyproject.toml: package metadata (v2.4.3)
 - helloagents/cli.py: CLI entry point
 - helloagents/_common.py: shared constants and utilities
 - helloagents/core/: CLI management modules (install, uninstall, update, status, dispatcher, hooks settings)
@@ -793,7 +793,20 @@ A: An experimental Claude Code feature where multiple Claude Code instances coll
 
 ## Version History
 
-### v2.4.2 (current)
+### v2.4.3 (current)
+
+**Sub-agent Orchestration:**
+- Auto-orchestration principle gains a CLI-consistency clause: Claude Code and Codex both proactively orchestrate sub-agents when trigger conditions are met (>=2 independent work units); only the invocation channel and environment preconditions differ
+- Each CLI's stability strategy and degradation thresholds are repositioned as post-failure fallbacks, not reasons to avoid sub-agents before orchestration
+- Codex sub-agent protocol adds a proactive-orchestration trigger-points section covering DESIGN scan/brainstorm, DEVELOP implement/test, ~review/~validatekb/~init, highlighting CSV batch processing as a Codex-exclusive high-throughput channel
+- Stability strategy repositioned as post-failure fallback; consecutive-failure and context-budget thresholds are annotated as failure statistics, not pre-emptive avoidance
+
+**Codex Sub-agent Model Default:**
+- Sub-agents now inherit the main agent's model by default (role configs omit model), aligning with Claude Code's model: inherit default
+- codex_roles.py intentionally omits model when creating role sections while preserving user-set model keys; read-only config_file omits model to keep inheritance
+- Reference config examples switch from per-role light/main models to default inheritance; differentiated downgrade is now an optional optimization
+
+### v2.4.2
 
 **Prompt Optimization:**
 - Added minimization ladder (7-step pre-coding self-check: YAGNI→reuse→stdlib→native→deps→shrink→minimal)

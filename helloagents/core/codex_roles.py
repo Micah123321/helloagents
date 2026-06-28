@@ -184,6 +184,14 @@ def _configure_codex_agent_roles(dest_dir: Path) -> None:
     Creates missing [agents.{role}] sections with description and
     nickname_candidates.  Updates managed keys on existing sections while
     preserving user-added keys (model, etc.).
+
+    Model default policy: this function intentionally does NOT write a `model`
+    key. In Codex's config layering, omitting `model` in a role section makes the
+    sub-agent inherit the top-level (main agent) model. This aligns Codex's
+    default with Claude Code's `model: inherit` default, so sub-agents run on the
+    same model as the main agent unless the user explicitly sets a lighter model
+    on a specific role. The readonly config_file also omits `model` to preserve
+    inheritance. User-added `model` keys on existing sections are preserved.
     """
     config_path = dest_dir / "config.toml"
     content = ""

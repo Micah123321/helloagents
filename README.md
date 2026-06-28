@@ -8,7 +8,7 @@
 
 **让 AI 按流程完成需求评估、实现和验证。**
 
-[![Version](https://img.shields.io/badge/version-2.4.2-orange.svg)](./pyproject.toml)
+[![Version](https://img.shields.io/badge/version-2.4.3-orange.svg)](./pyproject.toml)
 [![npm](https://img.shields.io/npm/v/helloagents.svg)](https://www.npmjs.com/package/helloagents)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB.svg)](./pyproject.toml)
 [![Commands](https://img.shields.io/badge/commands-22-6366f1.svg)](./helloagents/functions)
@@ -219,7 +219,7 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
     helloagents version --force --cache-ttl 0
     helloagents status
 
-预期版本为 `2.4.2`，分支为 `dev/2.3.8`。
+预期版本为 `2.4.3`，分支为 `dev/2.3.8`。
 
 **更新：**
 
@@ -655,7 +655,7 @@ CHANGELOG 使用语义版本号（X.Y.Z），版本来源优先级：用户指�
 
 - AGENTS.md：路由与工作流协议
 - SKILL.md：CLI 目标的技能发现元数据
-- pyproject.toml：包元数据（v2.4.2）
+- pyproject.toml：包元数据（v2.4.3）
 - helloagents/cli.py：CLI 入口
 - helloagents/_common.py：共享常量与工具函数
 - helloagents/core/：CLI 管理模块（安装、卸载、更新、状态、调度器、钩子设置）
@@ -804,7 +804,20 @@ CHANGELOG 使用语义版本号（X.Y.Z），版本来源优先级：用户指�
 
 ## 版本历史
 
-### v2.4.2（当前）
+### v2.4.3（当前）
+
+**子代理编排优化：**
+- 自动编排原则新增 CLI 一致性声明：Claude Code 与 Codex 满足触发条件（≥2 个独立工作单元）时均主动编排子代理，仅调用通道和环境前置不同
+- 各 CLI 的稳定性策略与降级阈值定位为编排失败后的兜底，不构成编排前回避子代理的理由
+- Codex 子代理协议新增「主动编排触发点」节，覆盖 DESIGN 扫描/构思、DEVELOP 实现/测试、~review/~validatekb/~init 等场景，突出 CSV 批处理为 Codex 独有高吞吐通道
+- 稳定性策略重定位为失败后兜底，连续失败和上下文预算阈值标注为失败统计而非预判回避
+
+**Codex 子代理模型默认：**
+- 子代理默认继承主代理模型（角色配置不设 model），与 Claude Code 的 model: inherit 默认对齐
+- codex_roles.py 创建角色节时刻意不写 model 并保留用户已设 model，只读 config_file 不含 model 以保持继承
+- 参考配置示例从按角色分轻量/主力模型改为默认继承，差异化降级降为可选优化
+
+### v2.4.2
 
 **提示词优化：**
 - 新增最小化阶梯（编码前 7 步自检：YAGNI→复用→标准库→原生→依赖→精简→最少代码）

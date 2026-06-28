@@ -24,6 +24,18 @@
   线程管理: /agent 命令在活跃子代理线程间切换
   审批传播: 父代理审批策略自动传播到子代理
 
+模型默认策略（CRITICAL）:
+  默认行为: 子代理默认继承主代理模型（Codex 配置分层: 角色节不设 model = 继承顶层主代理 model）
+  HelloAGENTS 写入 [agents.{role}] 时有意不设 model:
+    1. codex_roles.py 创建/更新角色节只写 description + nickname_candidates + config_file（只读角色），刻意不写 model
+    2. 只读角色 config_file（agents/helloagents-readonly-{role}.toml）只设 sandbox_mode + developer_instructions，不含 model
+    → 结果: 所有子代理默认与主代理同模型，与 Claude Code 的 model: inherit 默认行为对齐
+  降级为可选优化（非默认）:
+    仅当某角色确实需要更轻量模型（如 explorer/monitor 轮询扫描任务，为省成本）时，
+    才在对应 [agents.{role}] 节显式设 model = "<轻量模型名>"
+    实现/审查/构思类角色（worker/reviewer/brainstormer）通常需要主力模型能力，不建议降级
+  保留用户配置: codex_roles.py 更新角色节时保留用户已添加的 model 键（preserving user-added keys），不覆盖用户显式选择
+
 原生子代理:
   代码探索/依赖分析 → spawn_agent(agent_type="explorer", prompt="...")
   代码实现 → spawn_agent(agent_type="worker", prompt="...")
@@ -133,10 +145,56 @@ request_user_input:
 
 ---
 
+## Codex CLI 主动编排触发点（CRITICAL）
+
+```yaml
+定位: 本节平衡稳定性策略的"失败兜底"信号——明确 Codex 在哪些场景应主动 spawn 子代理。
+子代理编排由实际工作单元数驱动（同 Claude Code），不要求用户显式说"子代理/并行代理"。
+下面是 Codex 环境下应主动 spawn 的典型场景，触发条件沿用 subagent-protocols.md 自动编排原则:
+
+DESIGN Phase1（上下文收集）:
+  ≥2 个可独立扫描的目录/模块 → spawn_agent(agent_type="explorer") 按目录拆分并行扫描（≤6/批）
+  ≥2 个可独立分析的依赖单元 → explorer 按单元拆分并行深度分析
+  单一目录/单元或新建项目 → 主代理直接执行
+
+DESIGN Phase2（方案构思，TASK_COMPLEXITY=complex）:
+  ≥3 个独立 brainstormer 并行，每个独立构思一个差异化方案，spawn 后立即 collab wait
+
+DEVELOP 步骤6（代码实现）:
+  ≥2 个可独立并行的任务项 → spawn_agent(agent_type="worker") 按 DAG 层级或主代理判断并行
+  同层 ≥6 个结构相同的同构任务（相同指令模板+不同参数）→ 优先 spawn_agents_on_csv 批处理（CSV_BATCH_MAX>0 时）
+
+DEVELOP 步骤8（测试编写）:
+  独立测试文件≥2 → worker 按文件分配并行编写
+
+命令路径（并行收益明确时主动编排）:
+  ~review: ≥2 个分析维度或审查文件≥2 → 按维度/文件组拆分并行审查
+    强项场景: 大批量文件审查（如≥6 个文件）→ spawn_agents_on_csv 批处理是 Codex 独有的高吞吐通道
+  ~validatekb: ≥2 个验证维度或知识库文件≥2 → 并行验证
+  ~init: ≥2 个可独立扫描的模块目录 → explorer 并行扫描
+
+CSV 批处理主动判定（Codex 独有）:
+  CSV_BATCH_MAX>0 且同层/同批 ≥6 个结构相同的任务 → 优先 spawn_agents_on_csv（异构任务仍用 spawn_agent）
+  CSV_BATCH_MAX=0 → 退回 spawn_agent 逐个执行
+
+环境前置（编排前一次性检测，非每次回避）:
+  /experimental 未开启 或 agents.max_threads=0 → 跳过所有子代理调度，主代理直接执行（这是环境限制，不是回避）
+  检测通过 → 后续按上述触发点主动编排
+
+边界（编排不得绕过，与稳定性策略一致）:
+  确认、EHRB、阻塞等待（spawn 后立即 collab wait）、结果真实性、降级处理、主代理汇总决策
+```
+
+---
+
 ## Codex CLI 子代理稳定性策略（CRITICAL）
 
 ```yaml
-目的: 避免子代理反复 spawn→wait→close 循环浪费上下文窗口，尽早切入稳定的主代理执行路径
+定位（重要）: 本节机制仅在"子代理已 spawn 并失败/超时/无返回"之后生效，
+  是编排失败后的兜底，不构成编排前回避子代理的理由。
+  Codex 与 Claude Code 一样应主动编排（见上方"主动编排触发点"），仅触发条件和调用通道不同。
+
+目的: 子代理反复 spawn→wait→close 失败循环浪费上下文窗口时，切换到稳定的主代理执行路径
 
 单次等待策略:
   预估: 主代理在 spawn 前根据子代理任务规模（涉及文件数、预期产出量）预估等待轮数上限（默认 3，复杂任务可上调至 6）
@@ -153,21 +211,24 @@ request_user_input:
   DO NOT: 子代理仍在运行时主代理执行相同范围的任务（重复劳动+潜在文件冲突）
 
 连续失败阈值:
-  同一流程中（从进入 DESIGN 或 DEVELOP 阶段到状态重置之间）连续 2 个子代理超时/无返回:
-    → 进入"主代理直接执行模式"
-    行为: 后续所有任务不再尝试 spawn_agent，主代理逐项直接执行
+  触发时机: 同一流程中（从进入 DESIGN 或 DEVELOP 阶段到状态重置之间）连续 2 个子代理超时/无返回
+  触发后行为: → 进入"主代理直接执行模式"
+    后续所有任务不再尝试 spawn_agent，主代理逐项直接执行
     标注: 在 tasks.md 相关任务后追加 [主代理直接执行]
-    退出条件: 当前流程结束（状态重置时自动解除）
+  退出条件: 当前流程结束（状态重置时自动解除）
   首次失败: 降级当前任务 + 下一个任务仍尝试 spawn_agent
+  定位: 本阈值是失败后的兜底（连续 2 次确实超时/无返回才触发），不是编排前的预判回避
 
 环境检测:
-  /experimental 未开启 或 agents.max_threads=0 → 跳过所有子代理调度，主代理直接执行全部任务
+  /experimental 未开启 或 agents.max_threads=0 → 跳过所有子代理调度，主代理直接执行
   此时不标注 [降级执行]（非降级，而是正常的无子代理模式）
+  定位: 这是环境能力检测（编排前一次性判断），不是对子代理稳定性的预判回避
 
 上下文预算感知（DELEGATED 模式）:
   跟踪: 记录子代理 spawn→close 循环累计次数（含所有任务的所有失败尝试）
   阈值: 同一流程中累计 ≥3 次 spawn→close 循环 → 进入主代理直接执行模式（与连续失败阈值触发相同行为）
   目的: 即使失败不连续（中间夹杂成功），累积的上下文消耗也可能过大
+  定位: 本机制统计的是"已发生的 spawn→close 循环"，触发于实际消耗之后，非编排前的预判
 ```
 
 ---
