@@ -34,7 +34,18 @@ def _build_git_install_url(repo_url: str, branch: str) -> str:
 
 
 def _is_windows_entrypoint_lock_error(text: str) -> bool:
-    """Return whether uv failed while copying the Windows console launcher."""
+    """Return whether uv/pip failed while the running helloagents.exe is locked.
+
+    Two failure shapes are recognized:
+    1. Entry-point lock: uv could not copy/replace ``helloagents.exe``
+       (``failed to install entrypoint`` / ``helloagents.exe`` + in-use marker).
+    2. Tool-env directory lock: uv could not remove the uv tool env directory
+       (``failed to remove directory ...\\Scripts`` / ``os error 5``) because the
+       running ``helloagents.exe`` lives inside it and Windows holds the file lock.
+
+    Both stem from the same root cause: the user runs ``helloagents`` from a
+    shell whose current process is the very entry point being replaced.
+    """
     if not text:
         return False
 
@@ -42,19 +53,77 @@ def _is_windows_entrypoint_lock_error(text: str) -> bool:
     entrypoint_markers = (
         "failed to install entrypoint",
         "helloagents.exe",
+        "failed to remove directory",  # uv tool-env directory lock
     )
     lock_markers = (
+        "os error 5",
         "os error 32",
         "winerror 32",
+        "winerror 5",
         "being used by another process",
         "used by another process",
+        "access is denied",          # Windows ACL denial during tool-env removal
+        "permission denied",
         "另一个程序正在使用此文件",
+        "拒绝访问",                  # Chinese: access denied
         "进程无法访问",
     )
     return (
         any(marker in lower for marker in entrypoint_markers)
         and any(marker in lower for marker in lock_markers)
     )
+
+
+def _uv_toolenv_lock_error(text: str) -> bool:
+    """Return whether uv failed specifically on the tool-env directory removal.
+
+    uv's tool-env lock surfaces as:
+      ``error: failed to remove directory `...\\helloagents\\Scripts`: ... (os error 5)``
+    which the running helloagents.exe blocks. This is a stricter, more reliable
+    signal than the generic entrypoint check because the directory path is stable.
+    """
+    if not text:
+        return False
+    lower = text.lower()
+    return (
+        "failed to remove directory" in lower
+        and ("scripts" in lower or "helloagents" in lower)
+        and ("os error 5" in lower or "os error 32" in lower
+             or "access is denied" in lower or "permission denied" in lower
+             or "拒绝访问" in lower)
+    )
+
+
+def _attempt_deferred_reinstall(install_cmd: list[str], branch: str,
+                                total_steps: int, pre_targets: list[str],
+                                bak) -> bool:
+    """Schedule install_cmd to run after this process exits (Windows lock).
+
+    Used as the fallback when uv/pip fails mid-reinstall because the running
+    helloagents.exe locks files. Returns True if deferred install scheduled.
+    The deferred runner completes the reinstall after the shell exits, so the
+    package never ends up in a broken half-installed state.
+    """
+    if sys.platform != "win32":
+        return False
+    post = [[sys.executable, "-m", "helloagents.cli",
+             "_post_update", branch, str(total_steps)]]
+    all_post = post + [build_pip_cleanup_cmd()]
+    if _win_deferred_pip(install_cmd, post_cmds=all_post):
+        print(_msg(
+            "  helloagents.exe 被当前会话锁定，"
+            "更新将在退出后自动完成。",
+            "  helloagents.exe is locked by the current session; "
+            "update will complete automatically after exit."))
+        if pre_targets:
+            print(_msg(
+                f"  已安装的 {len(pre_targets)} 个 CLI "
+                f"工具也将自动同步。",
+                f"  {len(pre_targets)} installed target(s) "
+                f"will also be synced."))
+        win_finish_unlock(bak, False)
+        return True
+    return False
 
 
 def update(switch_branch: str | None = None) -> None:
@@ -155,6 +224,7 @@ def update(switch_branch: str | None = None) -> None:
     allow_pip_fallback = method != "uv"
 
     # Try uv first
+    uv_failed_text = ""  # captured for lock detection if uv errors
     if method == "uv":
         uv_cmd = [
             "uv", "tool", "install", "--from", install_url,
@@ -171,24 +241,17 @@ def update(switch_branch: str | None = None) -> None:
                 stdout = result.stdout.strip()
                 stderr = result.stderr.strip()
                 combined = f"{stdout}\n{stderr}"
-                if sys.platform == "win32" and _is_windows_entrypoint_lock_error(combined):
-                    post = [[sys.executable, "-m", "helloagents.cli",
-                             "_post_update", branch, str(total_steps)]]
-                    all_post = post + [build_pip_cleanup_cmd()]
-                    if _win_deferred_pip(uv_cmd, post_cmds=all_post):
-                        print(_msg(
-                            "  helloagents.exe 被当前进程锁定，"
-                            "更新将在退出后自动完成。",
-                            "  helloagents.exe is locked; "
-                            "update will complete after exit."))
-                        if pre_targets:
-                            print(_msg(
-                                f"  已安装的 {len(pre_targets)} 个 CLI "
-                                f"工具也将自动同步。",
-                                f"  {len(pre_targets)} installed target(s) "
-                                f"will also be synced."))
-                        win_finish_unlock(bak, False)
+                uv_failed_text = combined
+                # Lock failure (entrypoint or tool-env directory) → defer to
+                # post-exit so the running exe stops blocking the reinstall.
+                if sys.platform == "win32" and (
+                        _is_windows_entrypoint_lock_error(combined)
+                        or _uv_toolenv_lock_error(combined)):
+                    if _attempt_deferred_reinstall(
+                            uv_cmd, branch, total_steps, pre_targets, bak):
                         return
+                    # deferred scheduling itself failed → fall through to pip
+                    # fallback as a last resort (still tries to recover)
                 if stderr:
                     print(f"  uv error: {stderr}")
                 elif stdout:
@@ -198,7 +261,9 @@ def update(switch_branch: str | None = None) -> None:
                        "  Warning: uv not found, falling back to pip."))
             allow_pip_fallback = True
 
-    # Fallback to pip
+    # Fallback to pip (covers: uv not found, uv true-failure, uv non-Windows)
+    # On Windows, a uv lock failure that couldn't be deferred is retried via pip;
+    # pip's own lock failure is handled by its deferred branch below.
     if not updated and allow_pip_fallback:
         pip_cmd = [sys.executable, "-m", "pip", "install", "--upgrade",
                    "--no-cache-dir", install_url]
@@ -210,27 +275,18 @@ def update(switch_branch: str | None = None) -> None:
                 updated = True
             else:
                 stderr = result.stderr.strip()
+                combined = f"{result.stdout.strip()}\n{stderr}"
                 # Preemptive unlock failed or not Windows — last resort deferred
                 if sys.platform == "win32" and (
-                        "WinError" in stderr or "helloagents.exe" in stderr):
-                    # Let the new code detect targets itself via _post_update
-                    post = [[sys.executable, "-m", "helloagents.cli",
-                             "_post_update", branch, str(total_steps)]]
-                    all_post = post + [build_pip_cleanup_cmd()]
-                    if _win_deferred_pip(pip_cmd, post_cmds=all_post):
-                        print(_msg(
-                            "  helloagents.exe 被当前进程锁定，"
-                            "更新将在退出后自动完成。",
-                            "  helloagents.exe is locked, "
-                            "update will complete after exit."))
-                        if pre_targets:
-                            print(_msg(
-                                f"  已安装的 {len(pre_targets)} 个 CLI "
-                                f"工具也将自动同步。",
-                                f"  {len(pre_targets)} installed target(s) "
-                                f"will also be synced."))
-                        win_finish_unlock(bak, False)
+                        _is_windows_entrypoint_lock_error(combined)
+                        or _uv_toolenv_lock_error(combined)
+                        or "WinError" in combined
+                        or "helloagents.exe" in combined):
+                    if _attempt_deferred_reinstall(
+                            pip_cmd, branch, total_steps, pre_targets, bak):
                         return
+                    elif stderr:
+                        print(f"  pip error: {stderr}")
                 elif stderr:
                     print(f"  pip error: {stderr}")
         except FileNotFoundError:
@@ -248,6 +304,19 @@ def update(switch_branch: str | None = None) -> None:
             print(f"    uv tool install --from {install_url} helloagents --force --no-cache")
         else:
             print(f"    pip install --upgrade --no-cache-dir {install_url}")
+        # Lock-failure guidance: the running helloagents.exe blocks the reinstall
+        # when invoked from the project directory. Tell the user the actionable
+        # fix so they're not left guessing why the manual command is needed.
+        lock_hint_zh = (
+            uv_failed_text and sys.platform == "win32"
+            and (_is_windows_entrypoint_lock_error(uv_failed_text)
+                 or _uv_toolenv_lock_error(uv_failed_text)))
+        if lock_hint_zh:
+            print(_msg(
+                "  → 根因: helloagents.exe 被当前会话锁定。"
+                "换个目录运行，或退出当前会话后再执行上述命令。",
+                "  → Cause: helloagents.exe is locked by the current session. "
+                "Run from a different directory or exit this session first."))
         return
 
     # Re-exec: launch a NEW process for Phase 2+3 so that the freshly
