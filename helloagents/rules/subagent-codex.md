@@ -164,12 +164,21 @@ DEVELOP 步骤6（代码实现）:
   ≥2 个可独立并行的任务项 → spawn_agent(agent_type="worker") 按 DAG 层级或主代理判断并行
   同层 ≥6 个结构相同的同构任务（相同指令模板+不同参数）→ 优先 spawn_agents_on_csv 批处理（CSV_BATCH_MAX>0 时）
 
+DEVELOP 步骤7（安全与质量检查，含任务收尾自发审查）:
+  complex+核心/安全模块 → spawn_agent(agent_type="reviewer", fork_context=true) 强制审查
+  其他任务但满足 ≥2 文件/维度 + 并行收益明确 → 按 ~review 规则 spawn reviewer/explorer 并行审查
+  任务收尾的自发代码审查（验收前自审，非显式 ~review）等同 ~review 处理，应主动编排
+
 DEVELOP 步骤8（测试编写）:
   独立测试文件≥2 → worker 按文件分配并行编写
 
 命令路径（并行收益明确时主动编排）:
-  ~review: ≥2 个分析维度或审查文件≥2 → 按维度/文件组拆分并行审查
+  ~review: ≥2 个分析维度或审查文件≥2 且并行收益明确 → 按维度/文件组拆分并行审查
     强项场景: 大批量文件审查（如≥6 个文件）→ spawn_agents_on_csv 批处理是 Codex 独有的高吞吐通道
+  ~verify: 同 ~review（审查+验证+修复场景），≥2 维度或文件≥2 且并行收益明确 → 并行
+  ~commit: 步骤2 变更分析/预提交质量检查，待提交文件≥2 或需多维度检查 → spawn explorer/reviewer 并行
+    临界区（步骤3 git add→commit/锁/偏差检测/推送）始终主代理独占，不拆子代理（临界区白名单）
+  ~test: 步骤3/4 失败定位，失败文件≥2 或失败维度独立 → spawn worker/explorer 并行定位根因
   ~validatekb: ≥2 个验证维度或知识库文件≥2 → 并行验证
   ~init: ≥2 个可独立扫描的模块目录 → explorer 并行扫描
 
@@ -182,7 +191,7 @@ CSV 批处理主动判定（Codex 独有）:
   检测通过 → 后续按上述触发点主动编排
 
 边界（编排不得绕过，与稳定性策略一致）:
-  确认、EHRB、阻塞等待（spawn 后立即 collab wait）、结果真实性、降级处理、主代理汇总决策
+  确认、EHRB、阻塞等待（spawn 后立即 collab wait）、结果真实性、降级处理、主代理汇总决策、临界区白名单
 ```
 
 ---

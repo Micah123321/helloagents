@@ -49,6 +49,49 @@ helloagents 角色:
 并行调用: 多个子代理无依赖时，在同一消息中发起多个 Task 调用
 串行调用: 有依赖关系时，等待前一个完成后再调用下一个
 
+---
+
+## Claude Code 主动编排触发点（CRITICAL）
+
+> 与 subagent-codex.md 的"主动编排触发点"节对齐（CLI 无关原则）。定位: 平衡降级兜底，明确 Claude Code 在哪些场景应主动 spawn 子代理。
+> 触发阈值统一引用 subagent-protocols.md "通用子代理触发场景总表"，本节只列 Claude 通道和典型场景。
+
+```yaml
+环境前置（编排前一次性检测）: 无（Claude Code Agent 工具默认可用）；Agent Teams 需 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+  Agent 工具不可用 → 跳过所有子代理调度，主代理直接执行（环境限制，非回避）
+
+DESIGN Phase1（上下文收集）:
+  ≥2 个可独立扫描的目录/模块 → Agent(subagent_type="Explore") 按目录拆分并行扫描（≤6/批）
+  ≥2 个可独立分析的依赖单元 → Explore 按单元拆分并行深度分析
+  单一目录/单元或新建项目 → 主代理直接执行
+
+DESIGN Phase2（方案构思，TASK_COMPLEXITY=complex）:
+  ≥3 个独立 brainstormer 并行，每个独立构思一个差异化方案，同一消息发起全部 Task 调用
+
+DEVELOP 步骤6（代码实现）:
+  ≥2 个可独立并行的任务项 → Agent(subagent_type="general-purpose") 按 DAG 层级或主代理判断并行
+  同文件不同函数/区域 → Agent(isolation="worktree") 避免文件冲突
+
+DEVELOP 步骤7（安全与质量检查，含任务收尾自发审查）:
+  complex+核心/安全模块 → Agent(subagent_type="ha-reviewer") 强制审查
+  其他任务但满足 ≥2 文件/维度 + 并行收益明确 → 按 ~review 规则 spawn ha-reviewer/Explore 并行审查
+  任务收尾的自发代码审查（验收前自审，非显式 ~review）等同 ~review 处理，应主动编排
+
+DEVELOP 步骤8（测试编写）:
+  独立测试文件≥2 → general-purpose 按文件分配并行编写
+
+命令路径（并行收益明确时主动编排）:
+  ~review: ≥2 个分析维度或审查文件≥2 且并行收益明确 → 按维度/文件组拆分并行审查（ha-reviewer/Explore）
+  ~verify: 同 ~review（审查+验证+修复场景），≥2 维度或文件≥2 且并行收益明确 → 并行
+  ~commit: 步骤2 变更分析/预提交质量检查，待提交文件≥2 或需多维度检查 → spawn Explore/ha-reviewer 并行
+    临界区（步骤3 git add→commit/锁/偏差检测/推送）始终主代理独占，不拆子代理（临界区白名单）
+  ~test: 步骤3/4 失败定位，失败文件≥2 或失败维度独立 → spawn general-purpose/Explore 并行定位根因
+  ~validatekb: ≥2 个验证维度或知识库文件≥2 → 并行验证
+  ~init: ≥2 个可独立扫描的模块目录 → Explore 并行扫描
+
+边界（编排不得绕过，与 protocols 一致）: 确认、EHRB、阻塞等待、结果真实性、降级处理、主代理汇总决策、临界区白名单
+```
+
 示例（DEVELOP 步骤6 代码实现）:
   Agent(
     subagent_type="general-purpose",
