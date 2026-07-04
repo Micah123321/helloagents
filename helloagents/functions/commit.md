@@ -26,8 +26,17 @@
 
 并发防护（CRITICAL）:
   - 本仓库可能存在多个并发进程同时执行 ~commit 或其他 git 操作（多名 AI/主代理+子代理同仓库协作）
-  - 必须使用 `.helloagents/commit.lock` 文件锁保护临界区（git add → git commit），防范暂存冲突
+  - 必须使用 `.helloagents/commit.lock` 文件锁保护最短临界区（任务级暂存 → cached diff 审查 → git commit），防范暂存冲突
+  - 锁只覆盖 Git index 和 HEAD 写入，不覆盖 diff 分析、测试、提交信息生成、用户确认或失败等待
   - 锁获取失败（死锁）时按下方"并发冲突处理"流程走，不自以为是地覆盖或忽略
+
+任务级提交隔离（CRITICAL）:
+  - 提交单位是"当前任务的增量"，不是"当前文件的全部 diff"
+  - 多线程/并行任务可能修改同一个文件；同文件存在其他任务 hunk 时，必须按 hunk/patch 隔离
+  - 文件在本任务开始前已经 dirty，或无法证明全部 hunk 属于当前任务 → 标记为 mixed-file
+  - mixed-file 禁止整文件 `git add <path>`，只能暂存当前任务 patch/hunk
+  - 禁止全局 index 操作: `git add .`、`git reset HEAD`、`git restore --staged -- .`、`git checkout -- .`
+  - patch/hunk 暂存失败最多重建 1 次；仍失败则 fail-fast 输出冲突文件和处理选项，不得反复清 index、重建 patch、再检查
 ```
 
 ---
@@ -37,6 +46,7 @@
 ```yaml
 核心约束: 只负责提交现有变更，不负责创建变更
 用户描述中的"目标说明"作为提交范围参考，不执行文件操作
+提交范围: 以当前任务上下文、用户指定范围和任务基线为准；不得把共享文件中的全部未提交 diff 默认视为本任务变更
 ```
 
 **DO NOT:** 在用户确认前执行任何读取或改变项目文件状态的操作
@@ -69,10 +79,23 @@
     主代理汇总子代理返回的变更点 → 生成提交信息（提交信息生成始终主代理，确保 Conventional Commits 一致性）
     仅 1-2 个小文件 → 主代理直接读取 diff
     降级: 子代理失败 → 主代理直接读 diff + tasks.md 标记 [降级执行]
-  记录基准快照: 执行 git status --porcelain 捕获完整变更清单（{XY} {path} 元组集合），
-    保存到内存作为步骤3 并发偏差检测的"预期状态"。这是锁定前的快照记录，
-    步骤3 重新抓取新快照与此对比，检测其他进程是否插入了未预期的暂存/提交。
-    若 git status --porcelain 失败（仓库被锁等），输出: 错误，提示稍后重试，流程结束。
+
+任务级提交范围建模（CRITICAL）:
+  1. 建立 task_scope:
+     来源优先级: 用户明确指定的文件/模块/目标说明 → 当前方案包任务清单/本轮已修改文件 → diff 分析结果
+     范围必须可解释；无法解释的文件默认不纳入自动提交
+  2. 建立 task_baseline:
+     - 若当前 R2/R1 流程在修改前已有基线记录，使用该基线
+     - 若无显式基线，使用步骤2开始时的 git status + per-file diff 作为 commit-time 基线，并把已 dirty 文件标记为 mixed-file
+     - 新文件若路径属于 task_scope，可作为当前任务候选；不属于则排除
+  3. 标记文件类型:
+     - owned-file: 文件在任务开始前干净，且当前 diff 全部属于 task_scope
+     - mixed-file: 文件在任务开始前 dirty，或同文件 diff 中存在无法归属当前任务的 hunk
+     - excluded-file: 不属于 task_scope、敏感文件、或归属不清且无法隔离
+  4. 记录提交计划:
+     保存 owned_files、mixed_files、excluded_files、task_scope、baseline_status 到内存
+     步骤3 只允许暂存 owned_files 的整文件变更和 mixed_files 的任务 patch/hunk
+  若 git status --porcelain 或 per-file diff 失败（仓库被锁等），输出: 错误，提示稍后重试，流程结束。
 
 预提交质量检查（finish-work，按通用触发场景总表"提交辅助"场景，应主动编排 [→ G10]）:
   子代理调用:
@@ -97,9 +120,9 @@
 ⛔ END_TURN
 
 用户选择后:
-  仅本地提交: 展示安全暂存清单 → git add → git commit（不再二次确认暂存范围）
-  提交并推送: git commit + git push
-  提交并创建PR: git commit + git push + 引导创建PR
+  仅本地提交: 展示安全暂存清单 → 任务级暂存 → cached diff 审查 → git commit（不再二次确认暂存范围）
+  提交并推送: 任务级暂存 + git commit + git push
+  提交并创建PR: 任务级暂存 + git commit + git push + 引导创建PR
   修改信息: 进入追问流程
   取消: → 状态重置
 
@@ -117,13 +140,14 @@
 前置: 步骤2用户选择提交方式后
 
 ⚠️ 临界区白名单（CRITICAL）: 本步骤全程主代理独占执行，永不拆给子代理。
-  原因: git add→commit 受 commit.lock 互斥保护、偏差检测依赖串行快照对比、状态文件写入需原子性。
-  git add/commit/锁管理/偏差检测/EHRB/推送 均由主代理串行执行，违反会破坏并发安全 [→ G10 临界区白名单]
+  原因: 任务级暂存→cached diff 审查→commit 受 commit.lock 互斥保护，偏差检测依赖串行快照对比。
+  git apply --cached/git add/commit/锁管理/偏差检测/EHRB/推送 均由主代理串行执行，违反会破坏并发安全 [→ G10 临界区白名单]
+  锁范围: 获取锁后只做实时快照、任务级暂存、cached diff 审查、commit 和释放锁；禁止在锁内运行测试、生成提交信息、等待用户确认或做长耗时 diff 分析。
 
 === 第一阶段: 获取并发锁（CRITICAL） ===
 
 1. 检查 .helloagents/commit.lock 是否存在:
-   不存在 → 创建锁文件并写入 {pid: <当前进程PID>, files: [步骤2基准快照的文件路径列表], state: "acquired"}
+   不存在 → 创建锁文件并写入 {pid: <当前进程PID>, task_scope: ..., owned_files: ..., mixed_files: ..., state: "acquired"}
    存在 → 读取内容，执行死锁检测:
      a. 提取 lock.pid
      b. 验证该 PID 是否还在运行:
@@ -141,12 +165,13 @@
 
    === 偏差检测结果与处理 ===
 
-   a. 完全一致 → 无障碍，继续进入暂存
+   a. 完全一致 → 无障碍，继续进入任务级暂存
 
    b. 出现新文件（快照中新增了步骤2时不在的变更文件）:
       说明其他进程在本进程确认期间产生了新变更
-      列差异文件清单 → 输出 ⚠️ 警告（"检测到并发变更: 新增 {N} 个文件"）
-      选项: 忽略新文件，只提交流程2确认的文件（推荐） / 扩大范围包含新增变更 / 中止释放锁
+      默认处理: 新文件不在 task_scope → 自动排除并记录；在 task_scope → 重新归类为 owned-file 或 mixed-file
+      若无法归类 → 输出 ⚠️ 警告（"检测到并发变更: 新增 {N} 个文件"）
+      选项: 忽略新文件，只提交步骤2确认的任务范围（推荐） / 重新扫描提交范围 / 中止释放锁
 
    c. 基准文件消失（步骤2清单中的某些文件已被其他进程提交/重置）:
       说明其他进程已接管了本进程计划提交的部分变更
@@ -160,14 +185,19 @@
       提取冲突文件列表 → 输出 ⚠️ 警告（"文件状态冲突: {文件列表}"）
       选项: 重新扫描变更并重新生成提交信息后继续 / 中止释放锁
 
+   e. 同文件 hunk 发生漂移（文件仍存在但 diff 上下文变化）:
+      owned-file → 降级为 mixed-file，禁止整文件暂存
+      mixed-file → 重新生成任务 patch（最多 1 次）
+      重新生成后仍无法应用 → fail-fast，释放锁前只回滚本进程已暂存的 patch，不清理全局 index
+
 3. 偏差检测期间若 git status --porcelain 连续 2 次失败（仓库被其他进程长时间锁定）:
    → 输出: 错误（"Git 仓库被锁定，无法取快照"），释放锁，建议稍后重试
 
 
 === 第二阶段: 暂存与提交 ===
 
-4. 暂存策略（分步暂存，禁止直接 git add .）:
-   4.1 文件清单: 使用最新（偏差检测后的）变更文件列表
+4. 暂存策略（任务级暂存，禁止直接 git add .）:
+   4.1 文件清单: 使用最新（偏差检测后的）提交计划
    4.2 敏感文件检测: 检查变更文件中是否包含 .env、*credential*、*secret*、*.pem、*.key 等敏感文件
        - 发现敏感文件: 从暂存列表中排除，输出警告告知用户
        - 排除后无可提交文件: 输出警告并停止
@@ -176,15 +206,25 @@
        - 无敏感文件、无 EHRB 风险、用户未要求排除文件或修改提交信息时，展示清单后直接继续暂存和提交
        - 仅在以下情况暂停确认: 用户选择排除部分文件、用户选择修改提交信息、发现敏感/疑似敏感文件需人工裁决、暂存清单为空、检测到冲突标记或其他 EHRB 风险
        - git diff --check 的普通空白或 LF/CRLF 警告只记录为警告，不触发第二次暂存确认
-   4.4 暂存前最后验证: 在执行每个 git add <path> 之前，对该文件执行 git diff --quiet HEAD -- {path}
-       - 文件无变更（exit 0）→ 该文件已被其他进程提交/还原，跳过暂存
-       - 文件有变更（exit 1）→ 正常暂存
-       - 此检查不放大竞态窗口（立即紧随检查后 add），但在极端并发下仍可能漏检
-   4.5 执行暂存: 优先使用 git add <具体文件路径> 逐一添加，避免 git add .
-       - 文件数量过多（>20）时可使用 git add . 配合 .gitignore 和 git reset HEAD <敏感文件>
+   4.4 暂存前最后验证:
+       - owned-file: 在执行 git add <path> 之前，对该文件执行 git diff --quiet HEAD -- {path}
+         文件无变更（exit 0）→ 已被其他进程提交/还原，跳过暂存
+         文件有变更（exit 1）→ 允许路径级 `git add <path>`
+       - mixed-file: 禁止 `git add <path>`；必须生成当前任务 patch 并执行 `git apply --cached`
+   4.5 执行暂存:
+       - owned-file: 使用 git add <具体文件路径> 逐一添加
+       - mixed-file: 使用任务 patch/hunk 暂存；patch 来源必须能追溯到 task_baseline 与 task_scope
+       - patch 应用失败: 只允许重建 1 次；仍失败 → fail-fast，输出冲突文件、失败原因和可选处理，不继续循环
+       - 不得使用交互式 `git add -p` 作为自动化默认路径；仅在用户明确要求人工交互时使用
+       - 文件数量过多（>20）也不得退回 `git add .`；应分批按路径/patch 处理
+   4.6 cached diff 审查（CRITICAL）:
+       - 执行 git diff --cached --name-only 与 git diff --cached --check
+       - 对 mixed-file 执行关键词/范围审查，确认 cached hunk 只属于 task_scope
+       - 发现 unrelated hunk → 只撤回本进程刚应用的 patch/hunk；无法精确撤回时停止并提示，不得清空整个 index
+       - 若锁定前已有 unrelated staged content 且无法证明属于当前任务 → 停止提交，输出具体文件，不得把共享 index 一起 commit
 
 5. 提交: git commit -m "{提交信息}"
-   提交失败（退出码非 0）→ 保留锁，按下方"提交失败处理"执行，不直接释放锁
+   提交失败（退出码非 0）→ 按下方"提交失败处理"执行，默认释放锁，避免阻塞其他并行任务
 
 6. 释放并发锁: 删除 .helloagents/commit.lock
    - 必须执行（含提交失败时，死锁清理后释放）
@@ -204,13 +244,13 @@
 
   场景: git commit 退出码非 0（如钩子拒绝、提交信息格式错误、签名失败）
   处理:
-    1. 保留锁（不让其他进程在本进程恢复前插队）
+    1. 默认释放锁，避免阻塞其他并行任务；仅当失败可在 30 秒内自动重试且 index 只含本任务 staged content 时短暂保留锁
     2. 分析失败原因（git log/钩子输出/错误信息）
     3. 输出 ⚠️ 警告（"提交失败: {原因}"）
-    4. 选项: 修复后重试（保留暂存区，修复问题后重新 commit） / 取消并释放锁
-       - 修复后重试 → 在锁保护下重新执行 git commit
-       - 取消 → 释放锁，恢复暂存区（git reset HEAD），流程结束
-  锁保护期: 提交失败到用户决策期间锁不超时（无超时机制，用户决策后由处理结果自然释放）
+    4. 选项: 修复后重新执行 ~commit / 取消
+       - 修复后重新执行 ~commit → 重新走步骤2，重新建立 task_scope 和 mixed-file 判定
+       - 取消 → 仅撤回本进程本次 staged patch/hunk；无法精确撤回时提示用户检查 index，不做全局 reset
+  锁保护期: 不跨用户决策持有锁，避免 commit 卡住其他并行任务
 ```
 
 ### 步骤4: 后续操作
@@ -239,8 +279,11 @@
 | 偏差检测新增文件 | 输出: 警告（"检测到并发变更"），忽略/扩大/中止三选一 |
 | 偏差检测基准文件消失 | 输出: 提示（已被其他进程提交），排除后继续或结束 |
 | 偏差检测文件状态冲突 | 输出: 警告（"文件状态冲突"），重新扫描/中止二选一 |
+| 同文件混合 hunk | 标记 mixed-file，使用任务 patch/hunk 暂存；失败最多重建 1 次 |
+| patch/hunk 隔离失败 | fail-fast 输出冲突文件和处理选项，不清空 index，不进入重试循环 |
+| pre-existing staged content | 若无法证明属于当前任务，停止提交并列出文件，禁止连同本任务一起 commit |
 | 锁文件已死锁（原进程已死） | 输出: ℹ️ 提示（"清理死锁"），删除旧锁后重新创建 |
-| git commit 失败 | 保留锁，修复后重试或取消释放锁 |
+| git commit 失败 | 默认释放锁，修复后重新执行 ~commit；只撤回本进程 staged patch/hunk |
 | 释放锁失败（.helloagents/commit.lock 删除异常） | ⚠️ 警告（"锁文件可能残留，建议手动清理"），不影响流程正常结束 |
 
 ---
@@ -305,6 +348,9 @@ BILINGUAL_COMMIT=1: 本地语言块在上，英文块在下，用 --- 分隔，�
 - [ ] 提交信息符合 Conventional Commits 规范（emoji + type + scope + summary）
 - [ ] 暂存前已排除敏感文件（.env / *credential* / *secret* / *.pem / *.key 等）
 - [ ] 未使用 `git add .` 暴力暂存，而是分步或按具体路径暂存
+- [ ] mixed-file 已使用任务 patch/hunk 暂存，未整文件 `git add <path>`
+- [ ] 未使用 `git reset HEAD`、`git restore --staged -- .` 等全局 index 清理
+- [ ] patch/hunk 暂存失败时已 fail-fast，未反复清 index 或重建 patch
 - [ ] 公共 API/数据模型变更已同步知识库文档（未同步有 ⚠️ 警告且原因已说明）
 - [ ] 推送前已 `git fetch` 检查远程领先/分叉状态，冲突已处理或提示
 - [ ] 实际提交哈希已返回，未声称完成但未提交

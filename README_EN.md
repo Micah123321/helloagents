@@ -543,6 +543,8 @@ During development, the system auto-detects the project's package manager via lo
 - Analyzes `git diff` to auto-generate Conventional Commits formatted messages
 - Pre-commit quality checks (code-doc consistency, test coverage, verification commands)
 - Auto-excludes sensitive files (`.env`, `*.pem`, `*.key`, etc.) — never runs `git add .`
+- Parallel tasks use task-level hunk/patch isolation; mixed changes in the same file are marked as mixed-file and are not staged as a whole file
+- The commit lock only covers task-level staging, cached diff review, and commit; patch rebuild is attempted once, and global index cleanup is forbidden
 - Shows file list before staging, supports exclusion
 - Options: local commit only / commit + push / commit + push + create PR
 - Bilingual commit messages when `BILINGUAL_COMMIT=1`
