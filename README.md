@@ -304,7 +304,7 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
 > - `project_doc_max_bytes` 过低 — 默认 32KB，AGENTS.md 会被截断（安装时自动设为 131072）
 > - `agent_max_depth = 1` — 限制子代理嵌套深度，建议保持默认或 ≥2
 > - `agent_max_threads` 过低 — 默认 6，较低值限制并行子代理调度（CSV 批量模式建议 ≥16）
-> - `[features]` `multi_agent = true` — 必须启用才能使用子代理编排
+> - `spawn_agent` 能力以当前 Codex 工具发现和 Collab 环境为准；初始工具列表未显示时，HelloAGENTS 会先执行工具发现，不直接判定为不可用
 > - `[features]` `enable_fanout = true` — CSV 批量编排（spawn_agents_on_csv）必须启用
 > - Collab 子代理调度需要启用 Codex CLI 对应功能开关
 >
@@ -525,7 +525,7 @@ R2 标准流的设计阶段会派发 3–6 个子代理，各自独立生成竞�
 
 - TASK_COMPLEXITY = simple 且涉及文件 ≤ 3 且预估改动 ≤ 30 行
 
-轻量路径行为：跳过 proposal.md / tasks.md 创建，输出 ≤ 200 字的方案摘要后直接进入 DEVELOP，由主代理直接执行（不调度子代理），使用 R1 级别验收标准。条件不满足时自动回退到标准路径。
+轻量路径行为：跳过 proposal.md / tasks.md 创建，输出 ≤ 200 字的方案摘要后直接进入 DEVELOP。仅当任务确认为单一工作单元时由主代理直接执行；若识别出 ≥2 个独立工作单元且并行收益明确，则按 G10 编排子代理或回退标准路径。验证仍按 R1 验收标准执行，探测项目工具后可用则运行，并跳过完整交付验收。条件不满足时自动回退到标准路径。
 
 ### 开发阶段自动依赖管理
 

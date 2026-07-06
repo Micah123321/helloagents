@@ -293,7 +293,7 @@ The npm package follows the npm release channel and may not install this reposit
 > - `project_doc_max_bytes` too low — default 32KB, AGENTS.md will be truncated (auto-set to 131072 during install)
 > - `agent_max_depth = 1` — limits sub-agent nesting depth, recommend keeping default or ≥2
 > - `agent_max_threads` too low — default 6, lower values limit parallel sub-agent scheduling (CSV batch mode recommends ≥16)
-> - `[features]` `multi_agent = true` — must be enabled for sub-agent orchestration to work
+> - `spawn_agent` availability is determined by current Codex tool discovery and the Collab environment; when the initial tool list does not show it, HelloAGENTS discovers tools before treating it as unavailable
 > - `[features]` `enable_fanout = true` — must be enabled for CSV batch orchestration (spawn_agents_on_csv)
 > - Collab sub-agent scheduling requires Codex CLI feature gate to be enabled
 >
@@ -514,7 +514,7 @@ When an R2 task meets all of the following conditions, it automatically enters t
 
 - TASK_COMPLEXITY = simple, affected files ≤ 3, estimated changes ≤ 30 lines
 
-Lightweight behavior: skips proposal.md / tasks.md creation, outputs a ≤200-word solution summary, then enters DEVELOP directly with main agent execution (no sub-agent dispatch), using R1-level acceptance criteria. Falls back to the standard path if conditions aren't met.
+Lightweight behavior: skips proposal.md / tasks.md creation, outputs a ≤200-word solution summary, then enters DEVELOP. The main agent executes directly only when the task is confirmed to be a single work unit; if ≥2 independent work units with clear parallelization value are detected, HelloAGENTS either orchestrates sub-agents via G10 or falls back to the standard path. Validation still follows R1-level acceptance criteria, runs detected project tools when available, and skips full delivery acceptance. Falls back to the standard path if conditions aren't met.
 
 ### Auto Dependency Management
 

@@ -186,12 +186,27 @@ CSV 批处理主动判定（Codex 独有）:
   CSV_BATCH_MAX>0 且同层/同批 ≥6 个结构相同的任务 → 优先 spawn_agents_on_csv（异构任务仍用 spawn_agent）
   CSV_BATCH_MAX=0 → 退回 spawn_agent 逐个执行
 
+工具发现前置（CRITICAL）:
+  当 G10 判定应主动编排，但当前可见工具列表未直接显示 spawn_agent 时:
+    1. 必须先调用 tool_search 搜索 "spawn_agent multi-agent subagent collab"
+    2. 若发现 multi_agent_v1.spawn_agent 或等价单体子代理工具 → 按 Codex 调用协议使用该工具
+    3. 若只发现 spawn_agents_on_csv:
+       - 同构任务≥6且 CSV_BATCH_MAX>0 → 使用 CSV 批处理
+       - 异构任务或任务数<6 → 继续寻找单体 spawn_agent
+    4. 继续寻找单体 spawn_agent 时，依次追加搜索 "spawn_agent"、"multi_agent_v1.spawn_agent agent spawn collab"（最多 2 次），每次结果写入降级证据；仍找不到才降级
+    5. 工具发现失败、平台明确不可用或实际 spawn 调用失败 → 主代理直接执行，并记录为环境限制或调用失败证据
+  禁止:
+    - 仅凭初始工具列表未显示 spawn_agent 就判断无单体子代理通道
+    - 仅凭工具说明写有"用户显式要求"就跳过 HelloAGENTS 已触发的主动编排
+
 环境前置（编排前一次性检测，非每次回避）:
-  /experimental 未开启 或 agents.max_threads=0 → 跳过所有子代理调度，主代理直接执行（这是环境限制，不是回避）
+  /experimental 未开启 或 agents.max_threads=0 → 跳过所有子代理调度，主代理直接执行 + 标记 [降级执行] + 记录环境证据（这是环境限制，不是回避）
   检测通过 → 后续按上述触发点主动编排
 
 边界（编排不得绕过，与稳定性策略一致）:
   确认、EHRB、阻塞等待（spawn 后立即 collab wait）、结果真实性、降级处理、主代理汇总决策、临界区白名单
+降级证据:
+  降级报告必须说明触发原因: 工具发现失败 / 环境前置未满足 / 实际 spawn 调用失败 / 子代理超时或失败；禁止使用"可能只暴露批处理通道"等推测性描述作为直接降级依据
 ```
 
 ---
@@ -229,8 +244,7 @@ CSV 批处理主动判定（Codex 独有）:
   定位: 本阈值是失败后的兜底（连续 2 次确实超时/无返回才触发），不是编排前的预判回避
 
 环境检测:
-  /experimental 未开启 或 agents.max_threads=0 → 跳过所有子代理调度，主代理直接执行
-  此时不标注 [降级执行]（非降级，而是正常的无子代理模式）
+  /experimental 未开启 或 agents.max_threads=0 → 跳过所有子代理调度，主代理直接执行 + 标记 [降级执行] + 记录环境证据
   定位: 这是环境能力检测（编排前一次性判断），不是对子代理稳定性的预判回避
 
 上下文预算感知（DELEGATED 模式）:
