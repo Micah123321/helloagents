@@ -179,6 +179,7 @@ KB_SKIPPED=true → 扫描项目现有资源
 分级重试 [→ G10 分级重试策略]:
   瞬时失败（timeout/网络错误）→ 自动重试 1 次，仍失败 → [X]
   逻辑失败（代码错误/文件未找到）→ 不重试，直接 [X]
+  调用形态失败（Codex 参数/schema 错误，如 fork_context 与 agent_type 不兼容）→ 不按原参数重试；按 G10 省略 fork_context 并内嵌上下文兼容重试一次
   部分成功（status=partial）→ 保留已完成变更，未完成部分由主代理在汇总阶段补充
     主代理补充仍失败 → 标记 [X]，记录已完成和未完成的变更明细
   反复失败 → 触发 break-loop 深度分析（5维度根因分析）后再标记 [X] [→ G10 分级重试策略]
@@ -213,12 +214,13 @@ KB_SKIPPED=true → 扫描项目现有资源
   检查: 不安全模式(eval/exec/SQL拼接) + 敏感信息硬编码 + EHRB 风险 [→ G2]
   检测到 EHRB → 按 G2 处理流程执行
   子代理调用（按通用触发场景总表"代码/质量审查"场景 [→ G10]）:
-    complex+涉及核心/安全模块 → [RLM:reviewer] 执行代码审查（强制，Codex CLI 使用 fork_context=true）[→ G10 调用通道]
+    complex+涉及核心/安全模块 → [RLM:reviewer] 执行代码审查（强制；Codex CLI 默认省略 fork_context，并在 prompt 中包含方案摘要、任务清单、变更范围、验证结果和审查重点）[→ G10 调用通道]
     其他任务但满足 ≥2 文件/分析维度 + 并行收益明确 → 应主动 spawn reviewer/explorer 按 ~review 规则并行审查（按维度或文件分组，≤6/批）
       场景等同 ~review: 任务收尾的自发代码审查（验收前的自审，非显式 ~review 命令）按 ~review 编排规则处理，不受"complex+核心模块"限制
     仅 1 文件/1 维度 → 主代理直接执行安全检查
   降级: 子代理调用失败 → 主代理直接执行安全检查 + tasks.md 标记 [降级执行]
     Codex 降级证据: 初始工具列表未显示 spawn_agent 时必须先按 G10 执行 tool_search 工具发现；只有工具发现失败、环境前置未满足、实际调用失败或子代理超时/失败时才可降级，tasks.md 或验收报告必须记录具体原因，禁止使用"可能只暴露批处理通道"等推测性描述
+    Codex fork_context 参数兼容性失败必须先按 G10 省略 fork_context 重试；未执行该兼容重试不得标记 [降级执行]
 
 非编程任务:
   检查: 敏感信息泄露（PII/商业机密/未授权数据引用）+ EHRB 风险 [→ G2]

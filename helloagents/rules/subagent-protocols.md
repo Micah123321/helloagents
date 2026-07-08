@@ -69,7 +69,7 @@ CLI 一致性（CRITICAL）:
 
   2. 代码/质量审查（多维度审查）:
      典型: 显式 ~review/~verify、DEVELOP 阶段收尾的自发代码审查（非显式命令）、复杂任务的核心/安全模块审查
-     默认代理: reviewer（RLM 角色）/ Codex spawn_agent(reviewer, fork_context=true)
+     默认代理: reviewer（RLM 角色）/ Codex spawn_agent(agent_type="reviewer", prompt=自包含审查上下文；默认不传 fork_context)
      判定: ≥2 个分析维度 或 审查文件 ≥2 且并行收益明确 → 按维度/文件组并行审查（≤6/批）
      维度: 后端/API、前端/UI、迁移/持久化、测试/验证、质量、安全、性能、简化/过度工程、视觉/UX
      适用阶段/命令: ~review、~verify、DEVELOP 步骤7、任何阶段的自发代码审查
@@ -123,7 +123,7 @@ CLI 一致性（CRITICAL）:
   DEVELOP:
     子代理（按编排五步法选择类型）— ≥2个可独立并行的任务项 自动编排（步骤6，按 DAG 或主代理判断依赖后并行）| 新增测试用例时自动编排（步骤8）| 仅1个任务项 主代理直接执行
     代码审查（步骤7，含任务收尾的自发审查）— 应主动编排（不受 complex+核心模块限制）:
-      complex+涉及核心/安全模块 → reviewer 强制（fork_context）
+      complex+涉及核心/安全模块 → reviewer 强制；Codex 默认通过 prompt 注入完整上下文，不要求 fork_context
       其他任务但满足 ≥2 文件/维度 + 并行收益明确 → 按 ~review 规则主动 spawn reviewer/explorer 并行审查
       仅 1 文件/1 维度 → 主代理直接执行
       关键: 任务收尾的自发代码审查（验收前的自审，非显式 ~review 命令）等同 ~review 处理，满足总表审查场景触发条件即应主动编排
@@ -300,6 +300,7 @@ CLI 实现:
 
 ```yaml
 降级触发: 工具未发现 | CLI 不支持子代理（Grok CLI）| 环境前置未满足 | 实际 spawn 调用失败 | 子代理超时或失败
+Codex 参数兼容性失败（如 fork_context 字段未知或与 agent_type 组合非法）不立即视为最终实际 spawn 失败；必须先以同一 agent_type、省略 fork_context、prompt 内嵌上下文重试一次。该重试失败后才可记录为实际 spawn 调用失败并降级
 降级执行: 主代理在当前上下文中直接完成任务
 降级标记: 在 tasks.md 对应任务后追加 [降级执行]
 降级证据:
@@ -343,6 +344,10 @@ tasks.md 依赖声明格式:
   逻辑失败（代码错误/文件未找到/编译失败）:
     → 不自动重试
     → 标记 [X]，记录错误详情和失败原因
+  调用形态失败（参数校验失败、unknown field、invalid combination、agent_type+fork_context 不兼容）:
+    → 不按原参数重试
+    → Codex 改为省略 fork_context 并将上下文注入 prompt 后重试一次
+    → 仍失败才标记 [X]/[降级执行]
   部分成功（子代理返回 status=partial）:
     → 保留已完成的变更
     → 未完成部分记录到 issues，由主代理在汇总阶段决定是否补充执行

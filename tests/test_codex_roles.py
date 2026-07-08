@@ -32,6 +32,22 @@ class CodexRoleTests(unittest.TestCase):
             self.assertIn('sandbox_mode = "read-only"', content)
             self.assertIn("Do not create, edit, move, rename, or delete files.", content)
 
+    def test_configure_does_not_write_fork_context_to_codex_role_configs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest_dir = Path(tmp)
+
+            _configure_codex_agent_roles(dest_dir)
+
+            config = (dest_dir / "config.toml").read_text(encoding="utf-8")
+            self.assertNotIn("fork_context", config)
+
+            role_configs = sorted((dest_dir / "agents").glob("helloagents-readonly-*.toml"))
+            self.assertTrue(role_configs)
+            for role_config in role_configs:
+                with self.subTest(path=role_config.name):
+                    content = role_config.read_text(encoding="utf-8")
+                    self.assertNotIn("fork_context", content)
+
     def test_configure_updates_existing_role_and_preserves_user_keys(self):
         with tempfile.TemporaryDirectory() as tmp:
             dest_dir = Path(tmp)

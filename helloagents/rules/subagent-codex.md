@@ -43,17 +43,18 @@
   方案构思 → spawn_agent(agent_type="brainstormer", prompt="...")  # DESIGN 步骤10，RLM 角色
   监控轮询 → spawn_agent(agent_type="monitor", prompt="...")  # 长时间运行的轮询任务
 
-上下文分叉策略（fork_context）:
-  fork_context=true（子代理继承父代理完整对话历史作为背景，子代理收到系统消息:
-    "You are the newly spawned agent. The prior conversation history was forked from your parent agent.
-    Treat the next user message as your new task, and use the forked history only as background context."）:
-    - reviewer: 审查需要理解完整任务上下文和已执行变更
-    - writer: 文档编写需要理解项目背景和决策历史
-    - DAG 任务中的实现子代理: 需要理解整体方案和已完成任务的上下文
-  fork_context=false（默认，子代理从任务描述获取全部信息，无父代理历史）:
-    - brainstormer: 独立构思，任务描述中包含完整的项目上下文和差异化方向
-    - CSV 批处理 worker: 同构任务，每行 CSV 自包含全部信息
-  调用示例: spawn_agent(agent_type="worker", fork_context=true, prompt="...")
+上下文传递策略（fork_context 兼容边界）:
+  默认策略: 命名 Codex agent 调用使用 spawn_agent(agent_type="...", prompt="...")，默认不传 fork_context。
+  prompt 自包含上下文（CRITICAL）:
+    - reviewer: prompt 必须包含审查目标、相关 diff/变更摘要、方案/任务约束、验证结果和验收重点
+    - writer: prompt 必须包含文档目标、受众、结构要求、关键决策和引用范围
+    - DAG 任务中的实现子代理: prompt 必须包含整体方案、已完成任务、当前任务边界、允许写入范围和验证方式
+    - brainstormer: prompt 必须包含完整 Phase1 上下文和差异化方向，保持独立构思
+    - CSV 批处理 worker: 每行 CSV + instruction 必须自包含全部上下文
+  fork_context=true:
+    - 仅当当前会话的 spawn_agent schema 明确支持 agent_type 与 fork_context 同用时才可传入
+    - 不得通过首次不兼容 spawn 失败来探测兼容性
+    - 发现不兼容时立即改用同一 agent_type、省略 fork_context、prompt 内嵌上下文的兼容调用
 
 CSV 批处理编排（需 collab + sqlite 特性）:
   同构并行任务 → spawn_agents_on_csv(csv_path, instruction, ...)
@@ -87,6 +88,7 @@ helloagents 角色:
   执行步骤（同 Claude Code，仅调用方式不同）:
     1. 加载角色预设: 读取 rlm/roles/{角色}.md
     2. 构造 prompt: "[跳过指令] {从角色预设提取的约束} + {具体任务描述}"
+       Codex RLM 角色调用默认不传 fork_context；角色 prompt 必须自包含必要上下文
     3. 调用 spawn_agent: agent_type="{角色名}", prompt=上述内容
     4. 接收结果: 解析子代理返回的结构化结果
     5. 记录调用: 在 tasks.md 记录调用结果
@@ -165,7 +167,7 @@ DEVELOP 步骤6（代码实现）:
   同层 ≥6 个结构相同的同构任务（相同指令模板+不同参数）→ 优先 spawn_agents_on_csv 批处理（CSV_BATCH_MAX>0 时）
 
 DEVELOP 步骤7（安全与质量检查，含任务收尾自发审查）:
-  complex+核心/安全模块 → spawn_agent(agent_type="reviewer", fork_context=true) 强制审查
+  complex+核心/安全模块 → spawn_agent(agent_type="reviewer", prompt="...") 强制审查；prompt 必须内嵌完整审查上下文
   其他任务但满足 ≥2 文件/维度 + 并行收益明确 → 按 ~review 规则 spawn reviewer/explorer 并行审查
   任务收尾的自发代码审查（验收前自审，非显式 ~review）等同 ~review 处理，应主动编排
 
@@ -190,6 +192,7 @@ CSV 批处理主动判定（Codex 独有）:
   当 G10 判定应主动编排，但当前可见工具列表未直接显示 spawn_agent 时:
     1. 必须先调用 tool_search 搜索 "spawn_agent multi-agent subagent collab"
     2. 若发现 multi_agent_v1.spawn_agent 或等价单体子代理工具 → 按 Codex 调用协议使用该工具
+       参数兼容性: 若 schema 不含 fork_context，或调用返回 unknown field/invalid argument/agent_type 与 fork_context 不兼容等参数错误，必须立即改用同一 agent_type 且省略 fork_context、将上下文写入 prompt 后重试一次；该兼容性重试不计入稳定性失败、不触发主代理降级。重试仍失败才记录为实际 spawn 调用失败
     3. 若只发现 spawn_agents_on_csv:
        - 同构任务≥6且 CSV_BATCH_MAX>0 → 使用 CSV 批处理
        - 异构任务或任务数<6 → 继续寻找单体 spawn_agent
@@ -207,6 +210,7 @@ CSV 批处理主动判定（Codex 独有）:
   确认、EHRB、阻塞等待（spawn 后立即 collab wait）、结果真实性、降级处理、主代理汇总决策、临界区白名单
 降级证据:
   降级报告必须说明触发原因: 工具发现失败 / 环境前置未满足 / 实际 spawn 调用失败 / 子代理超时或失败；禁止使用"可能只暴露批处理通道"等推测性描述作为直接降级依据
+  Codex fork_context 参数兼容性失败不算最终实际 spawn 调用失败；必须先执行同一 agent_type、省略 fork_context、prompt 自包含上下文的兼容重试
 ```
 
 ---
@@ -219,6 +223,12 @@ CSV 批处理主动判定（Codex 独有）:
   Codex 与 Claude Code 一样应主动编排（见上方"主动编排触发点"），仅触发条件和调用通道不同。
 
 目的: 子代理反复 spawn→wait→close 失败循环浪费上下文窗口时，切换到稳定的主代理执行路径
+
+参数/schema 错误处理（CRITICAL）:
+  参数/schema 错误不是子代理运行稳定性失败
+  触发: fork_context 字段未知、agent_type 与 fork_context 组合非法、参数校验失败、unknown field、invalid argument
+  处理: 不进入等待/close/连续失败统计；按"省略 fork_context + prompt 自包含上下文"的兼容调用重试一次
+  失败统计: 兼容重试仍失败时，才记录为实际 spawn 调用失败
 
 单次等待策略:
   预估: 主代理在 spawn 前根据子代理任务规模（涉及文件数、预期产出量）预估等待轮数上限（默认 3，复杂任务可上调至 6）
@@ -240,7 +250,7 @@ CSV 批处理主动判定（Codex 独有）:
     后续所有任务不再尝试 spawn_agent，主代理逐项直接执行
     标注: 在 tasks.md 相关任务后追加 [主代理直接执行]
   退出条件: 当前流程结束（状态重置时自动解除）
-  首次失败: 降级当前任务 + 下一个任务仍尝试 spawn_agent
+  首次运行失败或超时: 降级当前任务 + 下一个任务仍尝试 spawn_agent；参数兼容性失败按上方兼容重试处理，不计入本阈值
   定位: 本阈值是失败后的兜底（连续 2 次确实超时/无返回才触发），不是编排前的预判回避
 
 环境检测:

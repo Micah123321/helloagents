@@ -26,6 +26,10 @@ notify = ["helloagents --check-update --silent"]
 
 # ─── 多代理配置（需 /experimental 或 /agent 开启）───
 
+# 兼容边界: 命名 Codex agent 调用应使用 spawn_agent(agent_type="...", prompt="...")。
+# prompt 需自包含目标、上下文和交付要求；默认不要组合 agent_type 与 fork_context=true。
+# fork_context 是调用期参数，不是 TOML 角色配置项，避免首次不兼容 spawn 失败后再重试。
+
 # 全局代理限制
 # agents.max_threads = 16        # 最大并发子代理线程数（spawn_agent ≤6，CSV ≤64）
 # agents.max_depth = 1           # 嵌套深度（默认 1，仅一层）

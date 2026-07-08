@@ -174,6 +174,7 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
 - 配置 `developer_instructions` 以提升路由协议优先级
 - 启用 `enable_fanout` 以使用 CSV 批量编排（v0.110+）
 - 配置 `nickname_candidates` 以实现角色识别
+- 兼容边界：命名 Codex agent 调用应使用 `spawn_agent(agent_type="...", prompt="...")`，并让 `prompt` 自包含必要上下文；默认不要组合 `agent_type` 与 `fork_context=true`，`fork_context` 是调用期参数，不是 TOML role config 项
 - 为只读子代理角色配置 read-only role config；Codex CLI 当前不提供 PreToolUse 危险命令拦截
 - 如使用并行工作流，配置 CSV 批量处理
 
@@ -305,6 +306,7 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
 > - `agent_max_depth = 1` — 限制子代理嵌套深度，建议保持默认或 ≥2
 > - `agent_max_threads` 过低 — 默认 6，较低值限制并行子代理调度（CSV 批量模式建议 ≥16）
 > - `spawn_agent` 能力以当前 Codex 工具发现和 Collab 环境为准；初始工具列表未显示时，HelloAGENTS 会先执行工具发现，不直接判定为不可用
+> - 兼容边界：命名 Codex agent 使用 `spawn_agent(agent_type="...", prompt="...")`，`prompt` 需自包含目标、上下文和交付要求；默认不要组合 `agent_type` 与 `fork_context=true`，`fork_context` 是调用期参数，不是 TOML role config 项，避免首次不兼容 spawn 失败后再重试
 > - `[features]` `enable_fanout = true` — CSV 批量编排（spawn_agents_on_csv）必须启用
 > - Collab 子代理调度需要启用 Codex CLI 对应功能开关
 >

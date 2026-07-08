@@ -1,10 +1,14 @@
 """Static checks for HelloAGENTS sub-agent orchestration rules."""
 
+import re
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SPAWN_AGENT_TYPE_WITH_FORK_CONTEXT = re.compile(
+    r"spawn_agent\((?=[^)]*\bagent_type\s*=)(?=[^)]*\bfork_context\s*=\s*(?:true|True))[^)]*\)"
+)
 
 
 def read_text(relative_path: str) -> str:
@@ -81,6 +85,53 @@ class SubagentRuleTests(unittest.TestCase):
 
         self.assertIn("工具发现", readme)
         self.assertIn("tool discovery", readme_en)
+
+    def test_codex_named_agent_type_defaults_to_embedded_prompt_context(self):
+        codex_rules = read_text("helloagents/rules/subagent-codex.md")
+
+        self.assertIn("agent_type", codex_rules)
+        self.assertIn("默认不传 fork_context", codex_rules)
+        self.assertIn("prompt 自包含上下文", codex_rules)
+        self.assertIn("首次不兼容 spawn", codex_rules)
+
+    def test_codex_agent_type_examples_do_not_combine_fork_context_true(self):
+        paths = [
+            "helloagents/rules/subagent-codex.md",
+            "helloagents/rules/subagent-protocols.md",
+            "helloagents/stages/develop.md",
+        ]
+
+        for relative_path in paths:
+            with self.subTest(path=relative_path):
+                text = read_text(relative_path)
+                self.assertIsNone(SPAWN_AGENT_TYPE_WITH_FORK_CONTEXT.search(text))
+
+    def test_readme_and_hooks_document_codex_spawn_compatibility_boundary(self):
+        expected = {
+            "README.md": (
+                ["agent_type", "fork_context", "prompt"],
+                ["兼容边界", "兼容性边界", "兼容性说明"],
+            ),
+            "README_EN.md": (
+                ["agent_type", "fork_context", "prompt"],
+                ["compatibility boundary", "compatibility notes"],
+            ),
+            "helloagents/hooks/hooks_reference.md": (
+                ["agent_type", "fork_context", "prompt"],
+                ["兼容边界", "兼容性边界"],
+            ),
+            "helloagents/hooks/codex_cli_hooks.toml": (
+                ["agent_type", "fork_context", "prompt"],
+                ["兼容边界", "兼容性边界"],
+            ),
+        }
+
+        for relative_path, (needles, boundary_markers) in expected.items():
+            with self.subTest(path=relative_path):
+                text = read_text(relative_path)
+                for needle in needles:
+                    self.assertIn(needle, text)
+                self.assertTrue(any(marker in text for marker in boundary_markers))
 
 
 if __name__ == "__main__":

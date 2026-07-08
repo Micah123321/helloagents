@@ -255,6 +255,14 @@ discovery, or a real spawn attempt fails. If the initial tool list does not show
 spawn_agent or spawn_agents_on_csv, search/discover sub-agent tools first and \
 record the discovery result before downgrading.
 
+Codex spawn compatibility: For named Codex agents, prefer \
+spawn_agent(agent_type="...", prompt="...") with a self-contained context in \
+the prompt. Do not combine agent_type with fork_context by default. If a \
+fork_context argument/schema failure or agent_type+fork_context invalid \
+combination occurs, it is not final failure evidence until the same agent_type \
+has been retried with fork_context omitted and the required context embedded in \
+the prompt. This avoids a first incompatible spawn attempt before retrying.
+
 If context was compressed during the session (previous messages were summarized, \
 not at session start): Immediately read {KB_ROOT}/plan/*/tasks.md (specifically \
 LIVE_STATUS section) to restore workflow state (all G6-defined state variables: \

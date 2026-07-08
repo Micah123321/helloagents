@@ -138,6 +138,8 @@ Codex CLI 当前没有等效 Claude Code 的 `PreToolUse(Bash)` 执行前危险�
 
 通过 `/agent` 命令（v0.110+）或 `/experimental` 开启:
 
+兼容边界: 命名 Codex agent 调用应使用 `spawn_agent(agent_type="...", prompt="...")`，并让 `prompt` 自包含目标、上下文和交付要求；默认不要组合 `agent_type` 与 `fork_context=true`，`fork_context` 是调用期参数，不是 TOML role config 项，避免首次不兼容 spawn 失败后再重试。
+
 ```toml
 # 全局代理限制
 agents.max_threads = 16   # 最大并发子代理线程数

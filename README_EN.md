@@ -172,6 +172,7 @@ Additionally, HelloAGENTS provides: **five-dimension routing scoring** (action n
 - Configure `developer_instructions` for routing protocol priority
 - Enable `enable_fanout` for CSV batch orchestration (v0.110+)
 - Configure `nickname_candidates` for agent role identification
+- Compatibility boundary: for named Codex agents, call `spawn_agent(agent_type="...", prompt="...")` and make `prompt` self-contained with required context; do not combine `agent_type` with `fork_context=true` by default, because `fork_context` is an invocation-time parameter, not a TOML role-config key
 - Configure read-only role configs for read-only sub-agents; Codex CLI currently does not provide a PreToolUse dangerous-command hook
 - Configure CSV batch processing if using parallel workflows
 
@@ -294,6 +295,7 @@ The npm package follows the npm release channel and may not install this reposit
 > - `agent_max_depth = 1` — limits sub-agent nesting depth, recommend keeping default or ≥2
 > - `agent_max_threads` too low — default 6, lower values limit parallel sub-agent scheduling (CSV batch mode recommends ≥16)
 > - `spawn_agent` availability is determined by current Codex tool discovery and the Collab environment; when the initial tool list does not show it, HelloAGENTS discovers tools before treating it as unavailable
+> - Compatibility boundary: named Codex agents should use `spawn_agent(agent_type="...", prompt="...")`, with `prompt` self-contained with the target, context, and delivery requirements; do not combine `agent_type` with `fork_context=true` by default, because `fork_context` is an invocation-time parameter, not a TOML role-config key. This avoids an initial incompatible spawn failure followed by a retry
 > - `[features]` `enable_fanout = true` — must be enabled for CSV batch orchestration (spawn_agents_on_csv)
 > - Collab sub-agent scheduling requires Codex CLI feature gate to be enabled
 >

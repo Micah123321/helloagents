@@ -1124,6 +1124,7 @@ Codex 授权裁决: 用户安装/启用 HelloAGENTS 并加载 G9/G10 工作流�
   显式: 用户在 prompt 中指定使用某代理 → 强制使用
 Skill/MCP 辅助: DEVELOP 阶段识别到可用 Skill/MCP 可加速当前子任务 → 主动调用（非强制）
 代理降级: 工具未发现 / CLI 不支持 / 环境前置未满足 / 实际 spawn 调用失败 / 子代理超时或失败 → 主代理直接执行，在 tasks.md 标记 [降级执行] 并记录可审计证据
+Codex 兼容重试: Codex 参数兼容性失败（尤其 agent_type 与 fork_context=true 不兼容）须先按 G10 省略 fork_context、prompt 内嵌上下文重试一次；该兼容重试失败后才视为实际 spawn 调用失败
 语言传播: 子代理 prompt 须包含当前 OUTPUT_LANGUAGE 设置
 完整调用协议（强制调用规则、编排范式、CLI 通道）: 加载 rules/subagent-protocols.md [→ G7 子代理调度时加载]
 ```
