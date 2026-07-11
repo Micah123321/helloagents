@@ -15,20 +15,54 @@ import json
 import re
 
 # Windows UTF-8 编码设置
-if sys.platform == 'win32':
-    if hasattr(sys.stdout, 'buffer'):
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    if hasattr(sys.stderr, 'buffer'):
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-    if hasattr(sys.stdin, 'buffer'):
-        sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='replace')
+def _configure_utf8_stream(stream_name: str) -> None:
+    """配置标准流，避免替换由测试框架管理的句柄。"""
+    stream = getattr(sys, stream_name, None)
+    reconfigure = getattr(stream, "reconfigure", None)
+    if callable(reconfigure):
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            pass
+        return
+
+    buffer = getattr(stream, "buffer", None)
+    if buffer is not None:
+        setattr(sys, stream_name, io.TextIOWrapper(
+            buffer, encoding="utf-8", errors="replace"
+        ))
+
+
+if sys.platform == "win32":
+    for _stream_name in ("stdout", "stderr", "stdin"):
+        _configure_utf8_stream(_stream_name)
 
 
 # ---------------------------------------------------------------------------
 # 已知错误模式 → 恢复建议
 # ---------------------------------------------------------------------------
 
+EDIT_TOOL_RECOVERY_SUGGESTION = (
+    "文件编辑工具调用失败: 先用 Read 或 Glob 确认路径和文件是否存在。"
+    "新文件使用当前工具列表中的 Write 完整写入；已有文件使用 Edit，"
+    "或在客户端暴露时使用 Update 做局部修改。不要用 Create 修改已有文件，"
+    "也不要原样重复失败调用。"
+)
+
+
 ERROR_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(
+        r"Error editing file|failed to edit(?:ing)? file|cannot edit file|"
+        r"edit(?:ing)? file failed",
+        re.IGNORECASE,
+    ), EDIT_TOOL_RECOVERY_SUGGESTION),
+
+    (re.compile(
+        r"(?:\bCreate\b.*(?:already exists|edit|modify|update)|"
+        r"(?:already exists|edit|modify|update).*\bCreate\b)",
+        re.IGNORECASE | re.DOTALL,
+    ), EDIT_TOOL_RECOVERY_SUGGESTION),
+
     (re.compile(r'Permission denied|EACCES', re.IGNORECASE),
      "权限错误: 检查文件/目录权限，可能需要 chmod 或以管理员权限运行。"
      "如果是 node_modules/.bin 权限问题，尝试删除 node_modules 重新安装。"),
@@ -64,10 +98,19 @@ ERROR_PATTERNS: list[tuple[re.Pattern, str]] = [
 ]
 
 
-def get_suggestion(error_text: str) -> str:
-    """匹配错误文本，返回恢复建议。无匹配返回空字符串。"""
+def get_suggestion(error_text: str, tool_name: str = "") -> str:
+    """匹配工具失败并返回恢复建议。
+
+    参数:
+        error_text: Hook 上报的错误文本。
+        tool_name: 失败工具名称，客户端在 payload 中提供时传入。
+
+    返回:
+        简短恢复建议；未知错误返回空字符串。
+    """
+    searchable_text = f"{tool_name}\n{error_text}"
     for pattern, suggestion in ERROR_PATTERNS:
-        if pattern.search(error_text):
+        if pattern.search(searchable_text):
             return suggestion
     return ""
 
@@ -86,7 +129,7 @@ def main():
     if not error:
         sys.exit(0)
 
-    suggestion = get_suggestion(error)
+    suggestion = get_suggestion(error, tool_name)
     if not suggestion:
         sys.exit(0)
 

@@ -60,7 +60,7 @@ SubagentStop — 质量验证循环（Ralph Loop）:
   超时: 120s | 脚本: ralph_loop.py
 
 PostToolUse — 进度快照:
-  事件: PostToolUse | 匹配: toolName 匹配 Write|Edit|NotebookEdit
+  事件: PostToolUse | 匹配: toolName 匹配 Write|Edit|Update|NotebookEdit
   动作: command hook，检查距上次快照是否超过阈值(5次写操作)，超过则生成进度快照
 
 Stop — KB 同步标志 + 智能声音路由:
@@ -94,6 +94,7 @@ PostToolUseFailure — 工具失败恢复建议:
   动作: command hook，匹配已知错误模式（权限、文件未找到、编码、磁盘空间、冲突、模块缺失等），
         注入 additionalContext 恢复建议
   超时: 5s | 脚本: tool_failure_helper.py
+  文件工具边界: 新文件使用 Write；已有文件使用 Edit，或在客户端暴露时使用 Update；不要用 Create 修改已有文件
 ```
 
 ---
