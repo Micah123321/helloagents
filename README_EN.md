@@ -173,6 +173,7 @@ Additionally, HelloAGENTS provides: **five-dimension routing scoring** (action n
 - Enable `enable_fanout` for CSV batch orchestration (v0.110+)
 - Configure `nickname_candidates` for agent role identification
 - Compatibility boundary: for named Codex agents, call `spawn_agent(agent_type="...", prompt="...")` and make `prompt` self-contained with required context; do not combine `agent_type` with `fork_context=true` by default, because `fork_context` is an invocation-time parameter, not a TOML role-config key
+- Waiting and takeover: each sub-agent gets an independent wait budget derived from task complexity; after the budget, the primary requests a structured `partial handoff`, closes the original agent, and takes over only the unfinished scope instead of repeating confirmed work
 - Configure read-only role configs for read-only sub-agents; Codex CLI currently does not provide a PreToolUse dangerous-command hook
 - Configure CSV batch processing if using parallel workflows
 
@@ -632,9 +633,9 @@ When multiple sub-agents need to modify different regions of the same file simul
 
 When ≥6 structurally identical tasks exist in the same execution layer, the system auto-converts `tasks.md` into a task CSV and dispatches via `spawn_agents_on_csv`. Each worker receives its row data + instruction template, executes independently, and reports results.
 
-- Progress tracked in real-time via `agent_job_progress` events (pending/running/completed/failed/ETA)
+- Progress tracked in real-time via `agent_job_progress` events (pending/running/completed/partial/failed/ETA)
 - State persisted in SQLite for crash recovery
-- Partial failures still export results with failure summary
+- Partial results still export; the primary agent preserves each worker's handoff and takes over only `pending_scope`
 - Heterogeneous tasks automatically fall back to `spawn_agent` sequential dispatch
 - Configure concurrency via `CSV_BATCH_MAX` (default 16, max 64, set to 0 to disable)
 

@@ -175,6 +175,7 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
 - 启用 `enable_fanout` 以使用 CSV 批量编排（v0.110+）
 - 配置 `nickname_candidates` 以实现角色识别
 - 兼容边界：命名 Codex agent 调用应使用 `spawn_agent(agent_type="...", prompt="...")`，并让 `prompt` 自包含必要上下文；默认不要组合 `agent_type` 与 `fork_context=true`，`fork_context` 是调用期参数，不是 TOML role config 项
+- 等待与接管：每个子代理按任务复杂度动态计算独立等待预算；达到预算后先请求结构化 `partial handoff`，关闭原代理后由主代理只接手未完成范围，不重复执行已确认结果
 - 为只读子代理角色配置 read-only role config；Codex CLI 当前不提供 PreToolUse 危险命令拦截
 - 如使用并行工作流，配置 CSV 批量处理
 
@@ -643,9 +644,9 @@ CHANGELOG 使用语义版本号（X.Y.Z），版本来源优先级：用户指�
 
 当同一执行层存在 ≥6 个结构相同的任务时，系统自动将 `tasks.md` 转为任务 CSV，通过 `spawn_agents_on_csv` 并行派发。每个 worker 接收各自的行数据 + 指令模板，独立执行并汇报结果。
 
-- 进度通过 `agent_job_progress` 事件实时追踪（pending/running/completed/failed/ETA）
+- 进度通过 `agent_job_progress` 事件实时追踪（pending/running/completed/partial/failed/ETA）
 - 状态持久化到 SQLite，支持崩溃恢复
-- 部分失败仍导出结果，附带失败摘要
+- 部分结果仍导出，`partial` worker 的 handoff 由主代理保留，并只接手 `pending_scope`
 - 异构任务自动回退到 `spawn_agent` 逐个派发
 - 通过 `CSV_BATCH_MAX` 配置并发上限（默认 16，最大 64，设为 0 关闭）
 

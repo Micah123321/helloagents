@@ -55,6 +55,32 @@ except ImportError:
     )
 
 
+TASK_STATUS_PATTERN = re.compile(
+    r"(?m)^\s*-\s+\[(?P<marker>√|X|-|\?| )\]\s+"
+)
+
+
+def count_task_markers(content: str) -> dict[str, int]:
+    """Count task markers without treating execution-log markers as tasks."""
+    counts = {
+        "completed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "pending": 0,
+        "uncertain": 0,
+    }
+    marker_map = {
+        "√": "completed",
+        "X": "failed",
+        "-": "skipped",
+        " ": "pending",
+        "?": "uncertain",
+    }
+    for match in TASK_STATUS_PATTERN.finditer(content):
+        counts[marker_map[match.group("marker")]] += 1
+    return counts
+
+
 def build_status_payload(
     content: str,
     status: str,
@@ -63,13 +89,7 @@ def build_status_payload(
     existing: dict | None = None,
 ) -> dict:
     """Build package status data from task markers."""
-    counts = {
-        "completed": len(re.findall(r'\[√\]', content)),
-        "failed": len(re.findall(r'\[X\]', content)),
-        "skipped": len(re.findall(r'\[-\]', content)),
-        "pending": len(re.findall(r'\[ \]', content)),
-        "uncertain": len(re.findall(r'\[\?\]', content)),
-    }
+    counts = count_task_markers(content)
     total = sum(counts.values())
     done = counts["completed"] + counts["skipped"]
     payload = dict(existing or {})

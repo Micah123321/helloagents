@@ -153,7 +153,7 @@ KB_SKIPPED=true → 扫描项目现有资源
 
 子代理调用（按需自动编排，遵循自动编排原则 [→ G10]）:
   ≥2个可独立并行的任务项 → 按编排五步法调度子代理并行执行任务改动 [→ G10 调用通道]
-    每个任务项单独调用一次，prompt 包含: 任务描述 + 目标文件 + 约束条件 + 设计方向摘要（含视觉产出时从 proposal.md "成果设计" 节提取：美学基调+配色+字体+氛围）+ 前端文案净化约束（前端/UI 任务时追加：组件属性中禁止写入功能说明或产品描述，仅用简洁 UI 标签）+ "直接执行，跳过路由评分"
+    每个任务项单独调用一次，prompt 包含: 任务描述 + 目标文件 + 约束条件 + 设计方向摘要（含视觉产出时从 proposal.md "成果设计" 节提取：美学基调+配色+字体+氛围）+ 前端文案净化约束（前端/UI 任务时追加：组件属性中禁止写入功能说明或产品描述，仅用简洁 UI 标签）+ 动态等待预算输入与返回格式 + "直接执行，跳过路由评分"
     返回格式要求: {status, changes, issues, verification} [→ G10 标准返回格式]
     接收结果后: 校验 changes.scope 与 prompt 指定范围一致 → 更新任务状态
   仅1个任务项 → 主代理直接执行
@@ -172,15 +172,17 @@ KB_SKIPPED=true → 扫描项目现有资源
   CSV 批处理（Codex CLI）: CSV_BATCH_MAX>0 且同层≥6 个结构相同的任务时，优先使用 spawn_agents_on_csv 替代逐个 spawn_agent [→ G10 Codex CLI 调用协议]
     CSV_BATCH_MAX=0 → 跳过 CSV 批处理，保留 spawn_agent 方式
     主代理从 tasks.md 提取同构任务 → 生成 CSV（列: task_id, file_path, scope, description）→ 构造指令模板 → 调用 spawn_agents_on_csv
-    并发上限 {CSV_BATCH_MAX}（默认 16），进度通过 agent_job_progress 事件实时追踪（pending/running/completed/failed/ETA）
+    并发上限 {CSV_BATCH_MAX}（默认 16），进度通过 agent_job_progress 事件实时追踪（pending/running/completed/partial/failed/ETA）
+    预算边界: CSV 调用只能传入一个 max_runtime_seconds；按同构批次最大复杂度计算统一预算。任务复杂度不同或需要逐 worker 独立 handoff 时退回 spawn_agent
     完成后读取 output CSV 汇总结果，更新各任务状态
     不适用时（异构任务/任务数<6）: 保留 spawn_agent 方式
 
 分级重试 [→ G10 分级重试策略]:
-  瞬时失败（timeout/网络错误）→ 自动重试 1 次，仍失败 → [X]
+  瞬时调用失败（spawn 未启动、网络错误、CLI 调用异常）→ 自动重试 1 次，仍失败 → [X]
+  任务级墙钟超时 → 按 G10 先请求 partial handoff，按动态宽限期等待，close 后只接手 pending_scope，不做全量盲重试
   逻辑失败（代码错误/文件未找到）→ 不重试，直接 [X]
   调用形态失败（Codex 参数/schema 错误，如 fork_context 与 agent_type 不兼容）→ 不按原参数重试；按 G10 省略 fork_context 并内嵌上下文兼容重试一次
-  部分成功（status=partial）→ 保留已完成变更，未完成部分由主代理在汇总阶段补充
+  部分成功（status=partial）→ 校验 handoff.completed_scope 与 evidence，保留已完成变更，主代理只补充 handoff.pending_scope
     主代理补充仍失败 → 标记 [X]，记录已完成和未完成的变更明细
   反复失败 → 触发 break-loop 深度分析（5维度根因分析）后再标记 [X] [→ G10 分级重试策略]
   连续修复失败（bug/失败测试场景）→ 加载 rules/debug.md 按四阶段调试法 + 卡住升级阶梯处理，避免反复试同一方向 [→ rules/debug.md]

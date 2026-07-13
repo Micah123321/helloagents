@@ -67,14 +67,14 @@ CSV 批处理编排（需 collab + sqlite 特性）:
     output_csv_path: 可选，结果导出路径（默认自动生成）
     output_schema: 可选，worker 返回结果的 JSON Schema
     max_concurrency: 并发数（默认 {CSV_BATCH_MAX}，上限 64）
-    max_runtime_seconds: 单个 worker 超时（默认 1800s）
+    max_runtime_seconds: 单次 CSV 调用对所有 worker 共用的运行时上限；同构批次按最大任务复杂度计算后显式传入，不把 1800s 当作工作流默认值
   执行流程:
     1. 主代理生成任务 CSV（从 tasks.md 提取同构任务行）
-    2. 调用 spawn_agents_on_csv，阻塞直到全部完成
+    2. 调用 spawn_agents_on_csv，使用该同构批次的统一预算，直到每个 worker 进入 completed/partial/failed/回收之一
     3. 每个 worker 自动收到行数据 + 指令，执行后调用 report_agent_job_result 回报
     4. 成功时自动导出结果 CSV；部分失败时仍导出（含失败摘要）
     5. 主代理读取 output CSV 汇总结果
-  进度监控: agent_job_progress 事件持续发出（pending/running/completed/failed）
+  进度监控: agent_job_progress 事件持续发出（pending/running/completed/partial/failed）；主代理保留 partial handoff 并只接手该行的 pending_scope
   状态持久化: SQLite 跟踪每个 item 状态，支持崩溃恢复
   失败处理: 无响应 worker 自动回收 | spawn 失败立即标记 | report_agent_job_result 仅限 worker 会话调用
 
@@ -106,9 +106,9 @@ helloagents 角色:
   Skill/MCP 辅助: DEVELOP 阶段识别到可用 Skill/MCP 可加速当前子任务 → 主动调用（非强制）
   用户扩展: 自定义子代理调度规则同 G9 用户代理分配规则 | Skills（Codex Skills）| MCP 服务器（不支持插件，扩展能力通过 Skill + MCP 实现）
 
-并行调用: 多个无依赖子代理 → 连续发起多个 spawn_agent → collab wait 等待全部完成（支持多ID单次等待）
+并行调用: 多个无依赖子代理 → 连续发起多个 spawn_agent → 立即进入按代理独立截止时间收敛的 collab wait（支持多ID单次等待）；某一代理超时只触发该代理的强制 handoff 和接管，不得拖住已完成代理
 串行调用: 有依赖 → 逐个 spawn_agent → 等待完成再发下一个
-恢复暂停: 子代理超时/暂停 → resume_agent 恢复
+恢复暂停: 未达到动态预算的暂停代理 → 可用 resume_agent 恢复；达到预算后进入强制 handoff，不再用 resume_agent 延长同一任务墙钟
 中断通信: send_input 向运行中的子代理发送消息（可选中断当前执行，用于纠偏或补充指令）
 关闭子代理: close 关闭指定子代理
 审批传播: 父代理审批策略自动传播到子代理，可按类型自动拒绝特定审批请求
@@ -118,17 +118,17 @@ helloagents 角色:
   spawn_agent(agent_type="brainstormer", prompt="直接执行以下任务，跳过路由评分。使用 {OUTPUT_LANGUAGE} 输出。你负责: 独立构思一个实现方案。上下文: {Phase1 收集的项目上下文}。差异化方向: {方向1}。")
   spawn_agent(agent_type="brainstormer", prompt="...你负责: 独立构思一个差异化方案，优先考虑不同的实现路径或架构模式。差异化方向: {方向2}。...")
   spawn_agent(agent_type="brainstormer", prompt="...你负责: 独立构思一个差异化方案，优先考虑不同的权衡取舍（如性能vs可维护性）。差异化方向: {方向3}。...")
-  collab wait  # 立即阻塞等待，禁止在此之前执行其他步骤
+  collab wait  # 立即进入有界等待，禁止在此之前执行其他步骤
 
 示例（spawn_agent 异构并行，每个子代理职责范围不重叠）:
-  spawn_agent(agent_type="worker", prompt="直接执行以下任务，跳过路由评分。使用 {OUTPUT_LANGUAGE} 输出。你负责: 任务1.1。操作范围: filter.py 中的空白判定函数。任务: 实现空白判定逻辑。约束: 代码体积控制: 文件/类超300行评估拆分、超400行强制拆分，函数超40行评估拆分、超60行强制拆分。返回: {status, changes: [{file, type, scope}], issues, verification: {lint_passed, tests_passed}}")
-  spawn_agent(agent_type="worker", prompt="直接执行以下任务，跳过路由评分。使用 {OUTPUT_LANGUAGE} 输出。你负责: 任务1.2。操作范围: validator.py 中的输入校验函数。任务: 实现输入校验逻辑。约束: 代码体积控制: 文件/类超300行评估拆分、超400行强制拆分，函数超40行评估拆分、超60行强制拆分。返回: {status, changes, issues, verification}")
+  spawn_agent(agent_type="worker", prompt="直接执行以下任务，跳过路由评分。使用 {OUTPUT_LANGUAGE} 输出。你负责: 任务1.1。操作范围: filter.py 中的空白判定函数。任务: 实现空白判定逻辑。约束: 代码体积控制: 文件/类超300行评估拆分、超400行强制拆分，函数超40行评估拆分、超60行强制拆分。返回: {status, changes: [{file, type, scope}], issues, verification: {lint_passed, tests_passed}, handoff: {completed_scope, evidence, pending_scope, blockers, next_action}}")
+  spawn_agent(agent_type="worker", prompt="直接执行以下任务，跳过路由评分。使用 {OUTPUT_LANGUAGE} 输出。你负责: 任务1.2。操作范围: validator.py 中的输入校验函数。任务: 实现输入校验逻辑。约束: 代码体积控制: 文件/类超300行评估拆分、超400行强制拆分，函数超40行评估拆分、超60行强制拆分。返回: {status, changes, issues, verification, handoff: {completed_scope, evidence, pending_scope, blockers, next_action}}")
   collab wait
 
 示例（spawn_agents_on_csv 同构批处理，批量审查 30 个文件）:
   # 主代理先生成 CSV: path,module,focus（每行一个任务，如 src/api/auth.py,auth,安全检查）
   spawn_agents_on_csv(csv_path="/tmp/review_tasks.csv", instruction="使用 {OUTPUT_LANGUAGE} 输出。审查 {path} 模块 {module}，重点关注 {focus}。返回: {{score: 1-10, issues: [...], suggestions: [...]}}", output_csv_path="/tmp/review_results.csv", max_concurrency=16)
-  # 阻塞直到全部完成（agent_job_progress 事件持续更新），完成后读取 output CSV 汇总结果
+  # 按 worker 动态预算收敛；全部 worker 进入 completed/partial/failed 后读取 output CSV 汇总结果
 ```
 
 ---
@@ -231,17 +231,24 @@ CSV 批处理主动判定（Codex 独有）:
   失败统计: 兼容重试仍失败时，才记录为实际 spawn 调用失败
 
 单次等待策略:
-  预估: 主代理在 spawn 前根据子代理任务规模（涉及文件数、预期产出量）预估等待轮数上限（默认 3，复杂任务可上调至 6）
-  等待循环: 每轮 collab wait 返回后，若有未完成的子代理:
-    1. 检查是否有部分产出（文件变更、中间输出等）
-    2. 有产出 → 子代理在正常推进，重置剩余等待计数，继续下一轮 collab wait
-    3. 无产出且未达等待上限 → 通过 send_input 催促子代理汇报进度，然后继续下一轮 collab wait
-    4. 无产出且已达等待上限 → 降级
-  DO NOT: 首轮 collab wait 无结果就放弃（至少完成预估轮数的等待）
-  DO NOT: 跳过 send_input 催促直接降级（催促可能唤醒卡住的子代理）
+  动态预算: 主代理在 spawn 前按 `scope_units`、`dependency_depth` 和 `task_weight` 计算每个子代理的预算，不使用全局固定秒数:
+    `wait_budget_seconds = clamp(120 + 60*min(scope_units, 8) + 120*min(dependency_depth, 3) + 60*task_weight, 180, 900)`
+    `task_weight`: scan=1、analysis/review=2、implementation/test=3；`scope_units` 为独立文件/模块/维度数；无依赖时 `dependency_depth=0`
+    `handoff_grace_seconds = clamp(round(wait_budget_seconds*0.1), 30, 90)`
+    主代理必须在 prompt 或任务日志中记录预算输入、计算结果和人工调整原因；300 秒只可作为中等扫描任务的示例，不是默认值
+  正常等待: spawn 后立即 collab wait；每轮返回后分别处理已完成、失败、partial handoff 和仍运行的代理
+  已完成代理: 立即保留实际结果，校验 changes.scope 或 handoff.completed_scope，不等待其他代理才能记录
+  截止触发: 某代理超过墙钟仍无 completed/failed/partial 结果 → 只向该代理发送一次强制回传请求，明确要求:
+    "请立即返回 status=partial 或 completed；列出 handoff.completed_scope、handoff.evidence、handoff.pending_scope、handoff.blockers 和 handoff.next_action。不要继续扩展任务范围。"
+  宽限期: 强制回传请求后按 `handoff_grace_seconds` 或一轮 collab wait 等待；普通“仍在处理”不重置墙钟，也不算有效结果
+  接管: 收到有效 partial handoff → 先 close 并确认关闭，再由主代理执行 pending_scope；没有有效回传 → close 并按原任务减去已验证范围接手，记录 timeout_no_handoff
+  批次收敛: 所有代理必须进入 completed/failed/partial handoff/closed 之一后，才进入依赖下游步骤；已完成代理不因同批其他代理延迟而重做
+  DO NOT: 用“有零散产出”重置墙钟；跳过强制回传直接关闭；原代理未 close 时执行重叠接管；超时后无条件全量重跑
 
 降级前置（CRITICAL）:
-  触发降级前必须先 close 该批所有运行中的子代理，确认关闭后再接手执行
+  代理级接管: 只有触发墙钟超时或无有效 handoff 的代理需要 close；确认该代理关闭后，主代理才能接手其 pending_scope
+  健康代理保留: 同批其他代理若仍在动态预算内正常推进，不得因某一代理超时而 close；它们继续独立收敛，结果照常保留
+  批次级切换: 连续失败阈值触发“主代理直接执行模式”只影响后续尚未派发的任务；不得终止当前健康代理，也不得在其仍运行时接手重叠范围
   DO NOT: 子代理仍在运行时主代理执行相同范围的任务（重复劳动+潜在文件冲突）
 
 连续失败阈值:
@@ -250,7 +257,7 @@ CSV 批处理主动判定（Codex 独有）:
     后续所有任务不再尝试 spawn_agent，主代理逐项直接执行
     标注: 在 tasks.md 相关任务后追加 [主代理直接执行]
   退出条件: 当前流程结束（状态重置时自动解除）
-  首次运行失败或超时: 降级当前任务 + 下一个任务仍尝试 spawn_agent；参数兼容性失败按上方兼容重试处理，不计入本阈值
+  首次运行失败: 降级当前任务 + 下一个任务仍尝试 spawn_agent；任务级墙钟超时先按强制 handoff 处理，只有没有有效回传且关闭后才计入本阈值；参数兼容性失败按上方兼容重试处理，不计入本阈值
   定位: 本阈值是失败后的兜底（连续 2 次确实超时/无返回才触发），不是编排前的预判回避
 
 环境检测:
@@ -258,7 +265,7 @@ CSV 批处理主动判定（Codex 独有）:
   定位: 这是环境能力检测（编排前一次性判断），不是对子代理稳定性的预判回避
 
 上下文预算感知（DELEGATED 模式）:
-  跟踪: 记录子代理 spawn→close 循环累计次数（含所有任务的所有失败尝试）
+  跟踪: 记录子代理 spawn→close 循环累计次数（含所有任务的所有失败尝试），并记录每次 handoff 是否成功保留部分结果
   阈值: 同一流程中累计 ≥3 次 spawn→close 循环 → 进入主代理直接执行模式（与连续失败阈值触发相同行为）
   目的: 即使失败不连续（中间夹杂成功），累积的上下文消耗也可能过大
   定位: 本机制统计的是"已发生的 spawn→close 循环"，触发于实际消耗之后，非编排前的预判

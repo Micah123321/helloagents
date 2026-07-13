@@ -37,7 +37,7 @@ Claude Code agent 文件（安装时部署至 ~/.claude/agents/）:
 不触发: 仅 1 个工作单元、工作单元存在强数据依赖无法并行、或子代理开销不低于收益 → 主代理直接执行
 复杂度角色: TASK_COMPLEXITY 影响编排深度和强度（reviewer 调度、验证范围、测试覆盖），不影响是否编排
 R1 例外: R1 快速流程为单点操作，天然仅 1 个工作单元，不触发子代理编排
-边界保持: 主动编排不得绕过确认、EHRB、职责隔离、阻塞等待、结果真实性、降级处理或主代理汇总决策规则
+边界保持: 主动编排不得绕过确认、EHRB、职责隔离、有界等待、结果真实性、降级处理或主代理汇总决策规则
 
 CLI 一致性（CRITICAL）:
   本原则 CLI 无关——Claude Code、Codex CLI 及其他 CLI 在满足触发条件时均应主动编排，
@@ -89,7 +89,8 @@ CLI 一致性（CRITICAL）:
 降级处理（所有场景通用）:
   子代理调用失败 / CLI 不支持子代理 / 环境前置未满足 → 主代理在当前上下文直接完成 + tasks.md 标记 [降级执行]
   降级证据（CRITICAL）: 标记 [降级执行] 前必须记录可审计证据，包括当前工具列表/工具发现结果、CLI 环境检测结果、实际 spawn_agent/spawn_agents_on_csv 调用错误或等待超时；无证据不得把应主动编排的任务降级为主代理直接执行
-  保留结果: 部分成功（status=partial）的子代理产出始终保留，未完成部分由主代理汇总补充
+  保留结果: 部分成功（status=partial）的子代理产出始终保留；主代理只接手 handoff.pending_scope，禁止重复执行 handoff.completed_scope
+  交接要求: status=partial 必须包含 handoff.completed_scope、handoff.evidence、handoff.pending_scope；未返回或未验证的内容不得计入已完成范围
 ```
 
 ### 临界区白名单（CRITICAL - 永不拆给子代理）
@@ -171,14 +172,20 @@ Worktree 隔离（Claude Code）: 当多个子代理需修改同一文件的不�
   不适用: 子代理仅读取文件（无写冲突）或任务间无文件重叠
   worktree 子代理完成后，主代理在汇总阶段合并变更
 
-阻塞等待与结果真实性（CRITICAL）:
-  阻塞等待: spawn 子代理后必须立即阻塞等待全部返回，等待期间禁止执行任何后续流程步骤
-    Claude Code: 多个 Task 调用自动阻塞直到全部返回
-    Codex CLI: 连续 spawn_agent 后立即 collab wait，不得在 spawn 与 wait 之间插入其他操作
-    其他 CLI: 使用 CLI 提供的等价阻塞等待机制
-    DO NOT: spawn 后"先做其他事再回来看结果"— 这会导致子代理结果丢失或被主代理伪造内容替代
-  结果真实性: 主代理仅汇总和决策子代理返回的实际内容，禁止在子代理未完成或未返回时自行生成应由子代理产出的内容
-  降级例外: 子代理超时/失败触发降级 [→ 降级处理] 后，主代理接手执行属于正常降级，不违反此规则
+有界等待与结果真实性（CRITICAL）:
+  有界等待: spawn 子代理后必须立即进入等待状态，但每个子代理按独立、预先计算的墙钟预算收敛；不得使用所有任务相同的固定等待时间
+    预算输入: scope_units（独立文件/模块/维度数，至少1）、dependency_depth（DAG依赖层数，无依赖为0）、task_weight（scan=1、analysis/review=2、implementation/test=3）
+    预算公式: wait_budget_seconds = clamp(120 + 60*min(scope_units, 8) + 120*min(dependency_depth, 3) + 60*task_weight, 180, 900)
+    交接宽限: handoff_grace_seconds = clamp(round(wait_budget_seconds*0.1), 30, 90)
+    记录要求: 主代理在派发 prompt 或任务日志中记录预算输入、计算结果和调整原因；复杂度增加只能在派发前调整
+    Claude Code: Task/后台代理达到截止时间时请求 partial handoff，再关闭失联代理
+    Codex CLI: 连续 spawn_agent 后立即 collab wait；达到该代理预算时使用 send_input 强制回传，按 handoff_grace_seconds 等待，随后 close 并接管
+    其他 CLI: 使用 CLI 等价的有界等待、阶段性回传和关闭机制；不支持时记录环境限制并由主代理接手
+  强制阶段性回传: 必须要求 status=partial|completed、已完成范围、证据、未完成范围和阻塞原因；普通“仍在处理”不算有效交接
+  独立收敛: 已完成代理的结果可以先记录和保留；单个失联代理只阻塞其自身范围，不拖住其他代理的结果消费
+  关闭边界: 未确认 close 前，主代理不得执行与运行中子代理重叠的范围；确认 close 后，主代理只接手 pending_scope
+  结果真实性: 主代理仅汇总和决策子代理实际返回或已验证的部分结果；未返回内容不能被主代理伪造成子代理产出
+  降级例外: 子代理超时/失败触发 handoff 或降级 [→ 降级处理] 后，主代理接手属于正常降级，不违反此规则
 ```
 
 ### 编排标准范式
@@ -196,7 +203,7 @@ Worktree 隔离（Claude Code）: 当多个子代理需修改同一文件的不�
      混合编排: 同批次内允许不同工作单元使用不同代理类型（如 3 个任务中 2 个匹配用户代理、1 个用原生子代理）
   3. 分配职责范围: 每个子代理的 prompt 必须明确其唯一职责边界（按任务类型适配，见 prompt 构造模板）
   4. 并行派发: 无依赖的子代理在同一消息中并行发起，有依赖的串行等待
-  5. 汇总决策: 阻塞等待全部子代理返回后，主代理汇总实际返回内容并做最终决策 [→ 阻塞等待与结果真实性]
+  5. 汇总决策: 等待每个子代理进入 completed/failed/partial handoff/closed 之一后，主代理汇总实际返回内容并按 pending_scope 接管 [→ 有界等待与结果真实性]
 
 适用场景与编排策略（步骤2c 的默认原生类型）:
   信息收集（代码扫描/依赖分析/状态查询）:
@@ -218,7 +225,7 @@ prompt 构造模板:
    [职责边界] 你负责: {按任务类型描述职责边界，见下方}。
    [任务内容] {具体要做什么}。
    [约束条件] {代码风格/格式/限制}。代码体积控制: 预警阈值（文件/类 300 行、函数 40 行须评估拆分）、强制拆分阈值（文件/类 400 行、函数 60 行须按职责拆分），例外: 生成代码、大型测试夹具、迁移脚本、协议常量表。前端文案净化（前端/UI 任务强制）: 组件的 title/subtitle/description/tooltip/placeholder/aria-label 等属性中禁止写入功能说明、产品描述或开发者注释性文本（如"队列、调度器和关键系统状态"、"保留相同的数据入口，但以更轻的页面结构展示"、"一眼看清"、"可以在同一页完成…等运营动作"），这些属性仅用于简洁的用户可见 UI 标签（如"节点管理"、"系统概览"），不超过 8 个字；功能说明属于文档而非代码。
-   [返回格式] 返回: {status: completed|partial|failed, changes: [{file, type, scope}], issues: [...], verification: {lint_passed, tests_passed}}"
+   [返回格式] 返回: {status: completed|partial|failed, changes: [{file, type, scope}], issues: [...], verification: {lint_passed, tests_passed}, handoff: {completed_scope, evidence, pending_scope, blockers, next_action}}"
 
   职责边界按任务类型适配:
     代码实现 → "你负责: 任务X。操作范围: {文件路径}中的{函数/类名}。"
@@ -233,6 +240,8 @@ prompt 构造模板:
     changes: [{file: "路径", type: "create|modify|delete", scope: "函数/类名"}]
     issues: ["发现的问题或风险"]
     verification: {lint_passed: true|false|skipped, tests_passed: true|false|skipped}
+    handoff: {completed_scope: ["已确认完成的范围"], evidence: ["文件/符号/命令等证据"], pending_scope: ["主代理待接手范围"], blockers: ["阻塞原因"], next_action: "主代理接手动作"}
+    partial 规则: status=partial 时 handoff.completed_scope、handoff.evidence、handoff.pending_scope 必须完整；status=completed 时 handoff 可省略
     注: 此为 prompt 内嵌简化格式，完整字段定义见 rlm/schemas/agent_result.json（RLM 角色子代理使用完整 schema）
 ```
 
@@ -290,6 +299,7 @@ CLI 实现:
   Codex CLI spawn_agents_on_csv: CSV 批处理（同构任务，≤{CSV_BATCH_MAX} 并发，需 collab+sqlite，CSV_BATCH_MAX=0 时禁用）
     适用判定: CSV_BATCH_MAX>0 且同层≥6 个结构相同的任务（相同指令模板+不同参数）→ 优先 CSV 批处理
     不适用: CSV_BATCH_MAX=0 | 任务间指令逻辑不同、需要不同工具集、或任务数<6 → 保留 spawn_agent
+    预算边界: CSV API 的 max_runtime_seconds 是本次调用内所有 worker 共用的单一值；同构批次按最大复杂度计算一个预算。任务复杂度不同或需要逐 worker 独立预算/partial handoff → 退回 spawn_agent
   OpenCode: 多个 Task tool 调用（@general / @explore），支持子代理间委派（task_budget + level_limit）
   Gemini CLI: 多个子代理自动委派（实验性）
   Qwen Code: 多个自定义子代理自动委派
@@ -338,9 +348,14 @@ tasks.md 依赖声明格式:
 目的: 区分失败类型，避免不必要的全量重试
 
 重试分级:
-  瞬时失败（timeout/网络错误/CLI异常）:
+  瞬时调用失败（spawn 未成功启动、网络错误、CLI 调用异常，且尚未确认子代理开始工作）:
     → 自动重试 1 次
     → 仍失败 → 标记 [X]，记录错误详情
+  任务级墙钟超时（子代理已启动但超过截止时间无终态结果）:
+    → 不做全量盲重试
+    → 先发送一次强制阶段性回传请求，按预先计算的 handoff_grace_seconds 等待
+    → 收到有效 partial handoff → close 原代理 → 主代理接手 pending_scope
+    → 无有效回传 → close 原代理 → 按原任务减去已验证范围接手，并记录 timeout_no_handoff
   逻辑失败（代码错误/文件未找到/编译失败）:
     → 不自动重试
     → 标记 [X]，记录错误详情和失败原因
@@ -350,7 +365,8 @@ tasks.md 依赖声明格式:
     → 仍失败才标记 [X]/[降级执行]
   部分成功（子代理返回 status=partial）:
     → 保留已完成的变更
-    → 未完成部分记录到 issues，由主代理在汇总阶段决定是否补充执行
+    → 校验 handoff.completed_scope 与证据
+    → 未完成部分取 handoff.pending_scope，由主代理在汇总阶段补充执行
 
 重试上限: 每个子代理最多重试 1 次
 结果保留: 成功的子代理结果始终保留，仅重试失败项

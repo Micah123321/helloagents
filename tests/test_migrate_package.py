@@ -142,6 +142,57 @@ class MigratePackageTests(unittest.TestCase):
             self.assertEqual(status_json["pending"], 1)
             self.assertEqual(status_json["current"], "已跳过并归档到 archive/2026-05")
 
+    def test_status_counts_ignore_execution_log_markers(self):
+        tasks = """# 任务清单: sample
+
+```yaml
+@feature: sample
+@created: 2026-05-05
+@status: in_progress
+@mode: R2
+```
+
+## 任务列表
+
+- [√] 1.1 完成实现
+- [ ] 1.2 待验证
+
+## 执行日志
+
+| 时间 | 任务 | 状态 | 备注 |
+|------|------|------|------|
+| 2026-05-05 23:59 | 方案设计 | [√] | 已完成 |
+| 2026-05-06 00:01 | 验证 | [ ] | 待执行 |
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_path = self._make_package(
+                root,
+                "202605052345_sample",
+                tasks,
+            )
+
+            report = migrate_package.migrate_package(
+                package_path,
+                root / ".helloagents" / "archive",
+                "completed",
+            )
+
+            self.assertTrue(report.success)
+            archived = (
+                root
+                / ".helloagents"
+                / "archive"
+                / "2026-05"
+                / "202605052345_sample"
+            )
+            status_json = json.loads(
+                (archived / ".status.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(status_json["completed"], 1)
+            self.assertEqual(status_json["pending"], 1)
+            self.assertEqual(status_json["total"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -120,6 +120,39 @@
       "type": "string",
       "description": "进度快照（格式: 📊 进度快照 | 完成: X | 失败: Y | 跳过: Z | 总计: N）"
     },
+    "handoff": {
+      "type": "object",
+      "description": "子代理超时或部分完成时交给主代理的结构化接管信息",
+      "properties": {
+        "completed_scope": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "已确认完成的文件、符号、目录或分析范围"
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "支持 completed_scope 的文件、符号、命令输出或其他可复核证据"
+        },
+        "pending_scope": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "尚未完成、由主代理接手的范围"
+        },
+        "blockers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "导致暂停、超时或无法继续的阻塞原因"
+        },
+        "next_action": {
+          "type": "string",
+          "description": "主代理接手时应执行的下一步"
+        }
+      },
+      "additionalProperties": false
+    },
     "metadata": {
       "type": "object",
       "properties": {
@@ -168,6 +201,22 @@
       "description": "执行元数据"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "partial" } },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["handoff"],
+        "properties": {
+          "handoff": {
+            "required": ["completed_scope", "evidence", "pending_scope"]
+          }
+        }
+      }
+    }
+  ],
   "examples": [
     {
       "status": "completed",

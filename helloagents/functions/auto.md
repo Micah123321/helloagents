@@ -79,6 +79,8 @@ overview 类型方案包: 直接归档，总结中标注
 
 质量保障（CRITICAL）:
   子代理稳定性: 按 rules/subagent-protocols.md "Codex CLI 子代理稳定性策略" 执行
+    等待预算: 按每个子代理的作用域单元数、依赖深度和任务类型动态计算，不使用全局固定等待时间
+    任务级超时: 先强制请求 partial handoff，按动态宽限期等待，close 后主代理只接手 pending_scope
     连续 2 个子代理超时 → 进入主代理直接执行模式（不再尝试 spawn_agent）
     累计 ≥3 次 spawn→close 循环 → 进入主代理直接执行模式
   功能验收: develop 步骤9 在 DELEGATED 模式下不可简化，与 INTERACTIVE 模式执行完全相同的验证流程
