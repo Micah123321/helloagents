@@ -47,6 +47,14 @@ helloagents 角色:
 后台执行: run_in_background=true 非阻塞，适用于独立长时间任务；子代理可通过 agent ID 恢复（resume）
 
 并行调用: 多个子代理无依赖时，在同一消息中发起多个 Task 调用
+批次接受证据（引用 subagent-protocols.md 编排启用契约）:
+  - 普通 Agent: 工具调用已被接受并返回 agent id（后台）或有效终态结果（前台）才计为实际成功启动；调用计划、prompt 数量和错误结果均不计数
+  - Agent Teams: teammate 成功加入团队并出现在共享任务/成员状态中才计数；仅生成 teammate 计划不计为成功启动
+  - 主代理通过 SessionManager/任务日志记录 final_dispatchable_count、successful_start_count、成功 agent/teammate id 和失败调用证据；普通批次 successful_start_count≥2、complex brainstormer successful_start_count≥3 后才宣称已启用编排
+  - 计划门槛已满足但调用收敛后仅 1 个普通 Agent 成功启动 → 当前环境暴露可寻址消息能力时请求立即返回 partial handoff、停止扩展；未暴露时等待自然终态，或使用宿主实际提供的任务停止能力并记录证据。终态后主代理仅接手 pending_scope。普通 Agent 通道无统一 close API，不得伪称已 close 或已启用编排
+  - 唯一成功的前台 Agent 已返回 completed/partial 终态且无可恢复 agent id → 保留其已验证 completed_scope，由主代理接手其余 pending_scope；记录终态和其他调用失败证据，不虚构恢复或关闭动作
+  - Agent Teams 仅 1 个 teammate 成功加入 → SendMessage(type="shutdown_request") 请求其先回传 partial handoff 再退出；确认退出后主代理接手 pending_scope
+  - DAG 层或分页尾批 final_dispatchable_count=1 → 不调用 Agent，由主代理直接执行；前序批次已启用不改变尾批判定
 串行调用: 有依赖关系时，等待前一个完成后再调用下一个
 
 ---
@@ -73,7 +81,7 @@ DEVELOP 步骤6（代码实现）:
   同文件不同函数/区域 → Agent(isolation="worktree") 避免文件冲突
 
 DEVELOP 步骤7（安全与质量检查，含任务收尾自发审查）:
-  complex+核心/安全模块 → Agent(subagent_type="ha-reviewer") 强制审查
+  complex+核心/安全模块 → 强制完成 reviewer 审查职责；最终可派发审查单元≥2 时调用 ha-reviewer/Explore，只有1个审查单元时由主代理按 reviewer 清单执行
   其他任务但满足 ≥2 文件/维度 + 并行收益明确 → 按 ~review 规则 spawn ha-reviewer/Explore 并行审查
   任务收尾的自发代码审查（验收前自审，非显式 ~review）等同 ~review 处理，应主动编排
 
@@ -88,6 +96,8 @@ DEVELOP 步骤8（测试编写）:
   ~test: 步骤3/4 失败定位，失败文件≥2 或失败维度独立 → spawn general-purpose/Explore 并行定位根因
   ~validatekb: ≥2 个验证维度或知识库文件≥2 → 并行验证
   ~init: ≥2 个可独立扫描的模块目录 → Explore 并行扫描
+
+尾批处理: 任一场景完成分组、候选过滤或 DAG 分层后只剩 1 个最终可派发单元 → 主代理直接执行，不启动单个 Agent
 
 边界（编排不得绕过，与 protocols 一致）: 确认、EHRB、阻塞等待、结果真实性、降级处理、主代理汇总决策、临界区白名单
 ```
@@ -119,6 +129,8 @@ DEVELOP 步骤8（测试编写）:
 调度: 主代理作为 Team Lead → spawn teammates（队友）（原生+专有角色混合）→ 共享任务列表（映射 tasks.md）+ mailbox 通信
   → teammates 自行认领任务 → Team Lead 综合结果
   teammates: Explore（代码探索）| general-purpose × N（代码实现，每人负责不同文件集）| helloagents 专有角色
+  接受计数: 仅已加入团队并可通过 mailbox/成员状态寻址的 teammate 计为实际成功启动；普通团队至少2个、complex brainstormer 至少3个成功加入后才宣称启用
+  部分启动回收: 计划满足门槛但仅1个 teammate 加入时，Lead 先请求 partial handoff，再发送 shutdown_request；确认退出并记录失败证据后由 Lead 接手 pending_scope
 
 典型场景:
   并行审查 — 安全/性能/测试覆盖各一个 teammate，独立审查后 Lead 综合

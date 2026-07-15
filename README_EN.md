@@ -83,7 +83,7 @@
 
 **RLM Sub-Agent Orchestration**
 
-3 specialized roles (reviewer / writer / brainstormer) plus host CLI native sub-agents (explore / code / brainstorm) are dispatched automatically based on independent work units and parallelization value, without requiring the user to explicitly ask for "sub-agents" or "parallel agents". Tasks are scheduled via DAG dependency analysis with topological sort and layer-by-layer parallel dispatch. Supports cross-CLI parallel scheduling and Agent Teams collaboration.
+3 specialized roles (reviewer / writer / brainstormer) plus host CLI native sub-agents (explore / code / brainstorm) are dispatched automatically based on independent work units and parallelization value, without requiring the user to explicitly ask for "sub-agents" or "parallel agents". Automatic orchestration starts only when semantic filtering leaves at least 2 launchable candidates and at least 2 actually start; with fewer than 2 candidates no agent is spawned. A lone successful start hands off and converges through the host-supported stop/reclaim mechanism. When no explicit close API exists, wait for a verifiable terminal state or confirm stop through a host capability before taking over; if neither is possible, block overlapping takeover and record the capability limitation. Tool or platform unavailability is an orchestration failure after the count gate passes, not a candidate filter. Complex proposal brainstorming requires at least 3 actual brainstormer starts and at least 3 usable agent-authored proposals before comparison. Tasks are scheduled via DAG dependency analysis with layer-by-layer parallel dispatch.
 
 **Your gain:** complex tasks are broken down and handled by the right specialist, with parallel execution when possible.
 </td>
@@ -585,7 +585,7 @@ Superset of `~review`, covering review → verify → auto-fix → wrap-up:
 
 ### Manual Sub-Agent Invocation
 
-Beyond automatic dispatch, you can manually invoke specific roles:
+Beyond automatic dispatch, you can manually invoke specific roles. An explicit single-role call is manual delegation, not automatic orchestration:
 
     ~rlm spawn reviewer "review src/api/ for security issues"
     ~rlm spawn writer "generate API reference docs"

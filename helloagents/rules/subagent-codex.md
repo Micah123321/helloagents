@@ -107,7 +107,14 @@ helloagents 角色:
   用户扩展: 自定义子代理调度规则同 G9 用户代理分配规则 | Skills（Codex Skills）| MCP 服务器（不支持插件，扩展能力通过 Skill + MCP 实现）
 
 并行调用: 多个无依赖子代理 → 连续发起多个 spawn_agent → 立即进入按代理独立截止时间收敛的 collab wait（支持多ID单次等待）；某一代理超时只触发该代理的强制 handoff 和接管，不得拖住已完成代理
-串行调用: 有依赖 → 逐个 spawn_agent → 等待完成再发下一个
+批次接受证据（引用 subagent-protocols.md 编排启用契约）:
+  - spawn_agent: 仅工具返回可用于 wait/send_input/close 的 agent id 才计为实际成功启动；调用计划、prompt 数量和失败调用均不计数
+  - spawn_agents_on_csv: 以调用返回的已接受 worker/job 记录及 agent_job_progress 的 running/completed/partial 状态计数；仅写入 CSV 的行数不计为成功启动
+  - 主代理在任务日志记录 final_dispatchable_count、successful_start_count、成功 agent/job id 和失败调用证据；普通批次 successful_start_count≥2、complex brainstormer successful_start_count≥3 后才宣称已启用编排
+  - 计划门槛已满足但兼容重试后仅 1 个 agent 成功启动 → 立即 send_input 请求 partial handoff，收到 handoff 后 close；无有效 handoff 也必须 close 并记录失败证据，主代理仅接手 pending_scope。该唯一 agent 不作为已启用编排报告
+  - CSV 调用返回时唯一成功 worker 已处于 completed/partial 终态 → 保留其已验证 completed_scope，由主代理接手其余 pending_scope；CSV API 无逐 worker send_input/close 通道，须记录终态和失败行证据，不得虚构关闭动作或宣称已启用编排
+  - DAG 层、分页批次或 CSV 拆批后的尾批 final_dispatchable_count=1 → 不调用 spawn_agent/CSV，由主代理直接执行；前序批次已启用不改变尾批判定
+依赖调用: 自动编排按 DAG 分层，每层重新计算 final_dispatchable_count；该层 <2 时主代理执行，≥2 时才并行 spawn。逐个单代理调用仅限用户显式单角色委派等非自动编排路径
 恢复暂停: 未达到动态预算的暂停代理 → 可用 resume_agent 恢复；达到预算后进入强制 handoff，不再用 resume_agent 延长同一任务墙钟
 中断通信: send_input 向运行中的子代理发送消息（可选中断当前执行，用于纠偏或补充指令）
 关闭子代理: close 关闭指定子代理
@@ -167,7 +174,7 @@ DEVELOP 步骤6（代码实现）:
   同层 ≥6 个结构相同的同构任务（相同指令模板+不同参数）→ 优先 spawn_agents_on_csv 批处理（CSV_BATCH_MAX>0 时）
 
 DEVELOP 步骤7（安全与质量检查，含任务收尾自发审查）:
-  complex+核心/安全模块 → spawn_agent(agent_type="reviewer", prompt="...") 强制审查；prompt 必须内嵌完整审查上下文
+  complex+核心/安全模块 → 强制完成 reviewer 审查职责；最终可派发审查单元≥2 时 spawn reviewer/explorer，只有1个审查单元时由主代理按 reviewer 清单执行；prompt 必须内嵌完整审查上下文
   其他任务但满足 ≥2 文件/维度 + 并行收益明确 → 按 ~review 规则 spawn reviewer/explorer 并行审查
   任务收尾的自发代码审查（验收前自审，非显式 ~review）等同 ~review 处理，应主动编排
 
@@ -187,6 +194,7 @@ DEVELOP 步骤8（测试编写）:
 CSV 批处理主动判定（Codex 独有）:
   CSV_BATCH_MAX>0 且同层/同批 ≥6 个结构相同的任务 → 优先 spawn_agents_on_csv（异构任务仍用 spawn_agent）
   CSV_BATCH_MAX=0 → 退回 spawn_agent 逐个执行
+  拆批后的尾批只有 1 行 → 主代理直接执行，不为凑批或沿用前序编排状态启动单 worker
 
 工具发现前置（CRITICAL）:
   当 G10 判定应主动编排，但当前可见工具列表未直接显示 spawn_agent 时:
@@ -248,6 +256,7 @@ CSV 批处理主动判定（Codex 独有）:
 降级前置（CRITICAL）:
   代理级接管: 只有触发墙钟超时或无有效 handoff 的代理需要 close；确认该代理关闭后，主代理才能接手其 pending_scope
   健康代理保留: 同批其他代理若仍在动态预算内正常推进，不得因某一代理超时而 close；它们继续独立收敛，结果照常保留
+  最小启动数例外: 批次兼容重试收敛后仅 1 个代理成功启动时，优先执行上方“批次接受证据”的单代理 handoff+close；这属于编排未形成，不适用健康代理继续运行规则
   批次级切换: 连续失败阈值触发“主代理直接执行模式”只影响后续尚未派发的任务；不得终止当前健康代理，也不得在其仍运行时接手重叠范围
   DO NOT: 子代理仍在运行时主代理执行相同范围的任务（重复劳动+潜在文件冲突）
 

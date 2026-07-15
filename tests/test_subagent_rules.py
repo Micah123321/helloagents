@@ -2,8 +2,14 @@
 
 import json
 import re
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
+
+from helloagents.core.claude_rules import _split_agents_md
+from helloagents.core.codex_config import _configure_codex_developer_instructions
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -141,6 +147,215 @@ class SubagentRuleTests(unittest.TestCase):
         self.assertNotIn("重置剩余等待计数", codex_rules)
         self.assertIn("健康代理保留", codex_rules)
         self.assertIn("只有触发墙钟超时或无有效 handoff 的代理需要 close", codex_rules)
+
+    def test_auto_orchestration_requires_dispatchable_and_started_minimums(self):
+        expected = {
+            "AGENTS.md": [
+                "最终可派发子代理数必须 ≥2",
+                "实际成功启动子代理数 ≥2",
+                "才可声明“已启用子代理编排”",
+            ],
+            "helloagents/rules/subagent-protocols.md": [
+                "最终可派发子代理数 ≥2 才进入派发",
+                "实际成功启动子代理数 ≥2",
+                "最终可派发子代理数 <2",
+            ],
+        }
+
+        for relative_path, needles in expected.items():
+            with self.subTest(path=relative_path):
+                text = read_text(relative_path)
+                for needle in needles:
+                    self.assertIn(needle, text)
+                self.assertNotIn(
+                    "无显式 close 能力时记录终态或能力限制证据",
+                    text,
+                )
+
+    def test_single_candidate_test_group_and_tail_stay_with_main_agent(self):
+        protocols = read_text("helloagents/rules/subagent-protocols.md")
+        develop = read_text("helloagents/stages/develop.md")
+        review = read_text("helloagents/functions/review.md")
+        validatekb = read_text("helloagents/functions/validatekb.md")
+
+        self.assertIn("不调用单个子代理", protocols)
+        self.assertIn("尾批边界", protocols)
+        self.assertIn("最终仅1个测试文件/测试职责 → 主代理直接设计并编写", develop)
+        self.assertIn("最终分组数<2（包括去重/合并后坍缩为单组）", review)
+        self.assertIn("最终分组数<2（包括去重/合并后坍缩为单组）", validatekb)
+        self.assertNotIn("需要新增测试用例时自动编排（步骤8）", protocols)
+        self.assertNotIn("需要新增测试用例时 → 按编排五步法调度子代理", develop)
+
+    def test_cli_rules_gate_on_actual_starts_and_use_real_reclaim_capabilities(self):
+        codex = read_text("helloagents/rules/subagent-codex.md")
+        claude = read_text("helloagents/rules/subagent-claude.md")
+
+        for text in (codex, claude):
+            self.assertIn("successful_start_count≥2", text)
+            self.assertIn("complex brainstormer successful_start_count≥3", text)
+            self.assertIn("partial handoff", text)
+
+        self.assertIn("wait/send_input/close 的 agent id", codex)
+        self.assertIn("CSV API 无逐 worker send_input/close 通道", codex)
+        self.assertIn("普通 Agent 通道无统一 close API", claude)
+        self.assertIn("当前环境暴露可寻址消息能力时", claude)
+        self.assertIn('SendMessage(type="shutdown_request")', claude)
+
+    def test_complex_brainstorming_requires_three_actual_starts(self):
+        design = read_text("helloagents/stages/design.md")
+        protocols = read_text("helloagents/rules/subagent-protocols.md")
+
+        self.assertIn("最终可派发 brainstormer 少于 3 个时不得派发", design)
+        self.assertIn("实际成功启动 brainstormer ≥3", design)
+        self.assertIn("计划 3~6 个且实际成功启动 ≥3 个子代理", protocols)
+        self.assertNotIn("复杂度: complex，已启用子代理编排", design)
+
+    def test_runtime_and_docs_propagate_orchestration_gate(self):
+        expected = {
+            "SKILL.md": ["at least 2 launchable", "at least 2 actually start"],
+            "helloagents/core/codex_config.py": [
+                "at least two launchable sub-agents",
+                "actually start",
+            ],
+            "helloagents/scripts/inject_context.py": [
+                "最终可派发数≥2",
+                "实际成功启动数≥2",
+            ],
+            "README.md": ["至少 2 个可派发", "至少 2 个实际启动"],
+            "README_EN.md": ["at least 2 launchable", "at least 2 actually start"],
+        }
+
+        for relative_path, needles in expected.items():
+            with self.subTest(path=relative_path):
+                text = read_text(relative_path)
+                for needle in needles:
+                    self.assertIn(needle, text)
+
+        inject_context = read_text("helloagents/scripts/inject_context.py")
+        self.assertNotIn("moderate/complex 任务必须编排子代理", inject_context)
+
+    def test_design_runtime_context_includes_brainstormer_start_gate(self):
+        script = ROOT / "helloagents" / "scripts" / "inject_context.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            package = Path(temp_dir) / ".helloagents" / "plan" / "active"
+            package.mkdir(parents=True)
+            (package / "proposal.md").write_text("# active", encoding="utf-8")
+            payload = json.dumps(
+                {"hookEventName": "UserPromptSubmit", "cwd": temp_dir}
+            )
+            result = subprocess.run(
+                [sys.executable, "-X", "utf8", str(script)],
+                input=payload,
+                text=True,
+                capture_output=True,
+                encoding="utf-8",
+                check=True,
+            )
+
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("complex 多方案构思计划3~6个 brainstormer", context)
+        self.assertIn("实际成功启动≥3", context)
+        self.assertIn("至少返回3个代理独立生成的可用方案才可比较", context)
+
+    def test_tool_unavailability_is_degradation_not_candidate_filtering(self):
+        paths = (
+            "AGENTS.md",
+            "helloagents/rules/subagent-protocols.md",
+            "helloagents/stages/develop.md",
+            "helloagents/functions/review.md",
+            "helloagents/functions/validatekb.md",
+        )
+        forbidden = (
+            "不可用候选",
+            "不可用角色/工具后的候选数量",
+            "可用性过滤",
+        )
+
+        for relative_path in paths:
+            with self.subTest(path=relative_path):
+                text = read_text(relative_path)
+                for phrase in forbidden:
+                    self.assertNotIn(phrase, text)
+
+        protocols = read_text("helloagents/rules/subagent-protocols.md")
+        self.assertIn("能力前置", protocols)
+        self.assertIn("不可用属于编排失败降级", protocols)
+        self.assertIn("不参与最终可派发数计算", protocols)
+        self.assertIn("最终可派发数低于场景门槛且由主代理执行 → 合规未触发", protocols)
+        self.assertNotIn("未调用且未标记[降级执行] →", protocols)
+
+        propagation = {
+            "SKILL.md": "not a candidate filter",
+            "README.md": "不参与候选过滤",
+            "README_EN.md": "not a candidate filter",
+            "helloagents/core/codex_config.py": "not a candidate filter",
+        }
+        for relative_path, needle in propagation.items():
+            with self.subTest(propagation=relative_path):
+                self.assertIn(needle, read_text(relative_path))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir)
+            _configure_codex_developer_instructions(destination)
+            generated = (destination / "config.toml").read_text(encoding="utf-8")
+        self.assertIn("not a candidate filter", generated)
+        self.assertIn("block overlapping takeover", generated)
+
+    def test_design_phase_one_uses_post_filter_group_counts(self):
+        design = read_text("helloagents/stages/design.md")
+
+        self.assertIn("重新计算最终扫描组数", design)
+        self.assertIn("重新计算最终分析组数", design)
+        self.assertIn("最终扫描组数 <2 → 主代理直接执行", design)
+        self.assertIn("最终分析组数 <2 → 主代理直接执行", design)
+        self.assertNotIn("子代理数=目录数", design)
+        self.assertNotIn("子代理数=单元数", design)
+
+    def test_common_rules_do_not_assume_every_cli_has_close(self):
+        expected = {
+            "AGENTS.md": ("必须等待可验证终态", "阻断接管"),
+            "helloagents/rules/subagent-protocols.md": (
+                "无法确认代理停止时",
+                "阻断重叠接管",
+            ),
+            "SKILL.md": (
+                "wait for a verifiable terminal state",
+                "block overlapping takeover",
+            ),
+            "README.md": ("必须等待可验证终态", "阻断重叠接管"),
+            "README_EN.md": (
+                "wait for a verifiable terminal state",
+                "block overlapping takeover",
+            ),
+        }
+
+        for relative_path, needles in expected.items():
+            with self.subTest(path=relative_path):
+                text = read_text(relative_path)
+                for needle in needles:
+                    self.assertIn(needle, text)
+
+    def test_codex_dag_layers_do_not_spawn_single_dependency_agents(self):
+        codex = read_text("helloagents/rules/subagent-codex.md")
+
+        self.assertIn("每层重新计算 final_dispatchable_count", codex)
+        self.assertIn("该层 <2 时主代理执行", codex)
+        self.assertNotIn("有依赖 → 逐个 spawn_agent", codex)
+
+    def test_complex_comparison_requires_three_usable_agent_proposals(self):
+        design = read_text("helloagents/stages/design.md")
+
+        self.assertIn("方案产出门槛", design)
+        self.assertIn("至少有 3 个由不同代理返回的可用方案", design)
+        self.assertIn("不得从空 pending_scope 生成整套替代方案", design)
+        self.assertIn("可用方案少于 3 个", design)
+
+    def test_claude_split_preserves_orchestration_gate(self):
+        split_rules = _split_agents_md(read_text("AGENTS.md"))
+
+        self.assertIn("最终可派发子代理数必须 ≥2", split_rules["subagent.md"])
+        self.assertIn("实际成功启动子代理数 ≥2", split_rules["subagent.md"])
+        self.assertNotIn("最终可派发子代理数必须 ≥2", split_rules["CLAUDE.md"])
 
     def test_agent_result_schema_defines_partial_handoff(self):
         schema = json.loads(read_text("helloagents/rlm/schemas/agent_result.json"))

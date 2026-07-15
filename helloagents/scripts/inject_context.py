@@ -105,7 +105,7 @@ DEVELOP_RULES = """[HelloAGENTS DEVELOP 阶段执行提醒]
 
 1. 加载模块: 读取 stages/develop.md + services/package.md（G7 规则，不可跳过）
 2. 确定方案包: 读取 CURRENT_PACKAGE 的 tasks.md 和 proposal.md
-3. 按任务清单逐项执行: moderate/complex 任务必须编排子代理（G9）
+3. 按任务清单逐项执行: 先过滤独立候选；最终可派发数≥2且实际成功启动数≥2后才启用自动编排（G9）
 4. 子代理协议: 遇到 [→ G10] 或 [RLM:角色名] 时按 G7 加载 rules/subagent-protocols.md
 5. 每个任务完成后更新 tasks.md 状态符号（[ ]→[√]/[X]/[-]）+ LIVE_STATUS 区域
 6. 安全与质量检查（步骤7）
@@ -122,6 +122,7 @@ DESIGN_RULES = """[HelloAGENTS DESIGN 阶段执行提醒]
 
 Phase1: 上下文收集 → 项目扫描 → 复杂度评估（TASK_COMPLEXITY）→ KB_SKIPPED 判定
 Phase2: 方案构思 → 方案包生成（proposal.md + tasks.md）→ validate_package.py 验收
+子代理门槛: 普通扫描/分析候选语义过滤后≥2且实际成功启动≥2才启用；complex 多方案构思计划3~6个 brainstormer，实际成功启动≥3且至少返回3个代理独立生成的可用方案才可比较
 完成后: 设置 CURRENT_STAGE=DEVELOP → 按 G7 加载 develop.md → 进入开发实施
 
 DO NOT: 跳过 Phase1 直接写方案 | 跳过方案包验收 | 设计完成后直接写代码不加载 develop.md"""
@@ -131,7 +132,7 @@ GENERIC_RULES = """[HelloAGENTS 核心流程提醒]
 - G4 评估: R2 严格按 G4 需求评估章节执行
 - G5 阶段链: 评估→确认→DESIGN→DEVELOP→KB同步→完成（每阶段必须加载对应模块文件 G7）
 - G7 模块加载: 进入 DESIGN 读 stages/design.md | 进入 DEVELOP 读 stages/develop.md
-- G9 子代理: ≥2个独立工作单元时自动编排子代理并行执行
+- G9 子代理: 候选过滤后可派发数≥2且实际成功启动数≥2才启用自动编排；过滤后<2不 spawn，由主代理执行
 - G11 注意力: tasks.md 状态必须随进度更新"""
 
 

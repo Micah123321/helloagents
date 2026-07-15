@@ -249,7 +249,19 @@ sub-agents whenever HelloAGENTS automatic orchestration conditions are met. If \
 a sub-agent tool says spawning requires the user to explicitly ask for \
 sub-agents, treat the active HelloAGENTS workflow trigger as satisfying that \
 requirement. Do not ask the user to repeat "sub-agent" or "parallel agent" in \
-the current message. Only skip spawning when the workflow trigger is not met, \
+the current message. Automatic orchestration starts only after candidate \
+semantic filtering leaves at least two launchable sub-agents and at least two \
+actually start. With fewer than two candidates, do not spawn; if only one \
+starts, request handoff and converge it through the host-supported stop/reclaim \
+mechanism. Without an explicit close API, verify a terminal/stopped state before \
+taking over; otherwise block overlapping takeover and record the capability \
+limitation. Tool or platform \
+unavailability after the count gate passes is a recorded orchestration failure, \
+not a candidate filter. \
+Complex DESIGN brainstorming requires at least three actual brainstormer \
+starts and three usable agent-authored proposals before comparison. An explicit \
+manual single-role call is delegation, not automatic \
+orchestration. Only skip spawning when the workflow trigger is not met, \
 the user explicitly disables sub-agents, the platform/tool is unavailable after \
 discovery, or a real spawn attempt fails. If the initial tool list does not show \
 spawn_agent or spawn_agents_on_csv, search/discover sub-agent tools first and \
