@@ -17,16 +17,25 @@ import io
 import os
 import json
 import locale
+import shlex
 from pathlib import Path
 
-# Windows UTF-8 编码设置
-if sys.platform == 'win32':
-    if hasattr(sys.stdout, 'buffer'):
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    if hasattr(sys.stderr, 'buffer'):
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-    if hasattr(sys.stdin, 'buffer'):
-        sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='replace')
+def _configure_standard_streams() -> None:
+    """Configure UTF-8 standard streams when the hook runs on Windows."""
+    if sys.platform != "win32":
+        return
+    if hasattr(sys.stdout, "buffer"):
+        sys.stdout = io.TextIOWrapper(
+            sys.stdout.buffer, encoding="utf-8", errors="replace"
+        )
+    if hasattr(sys.stderr, "buffer"):
+        sys.stderr = io.TextIOWrapper(
+            sys.stderr.buffer, encoding="utf-8", errors="replace"
+        )
+    if hasattr(sys.stdin, "buffer"):
+        sys.stdin = io.TextIOWrapper(
+            sys.stdin.buffer, encoding="utf-8", errors="replace"
+        )
 
 
 # NOTE: _detect_locale 与 utils.py 中的同名函数保持一致。
@@ -122,6 +131,72 @@ def update_cache(mtime: float):
         pass
 
 
+def _is_helloagents_command(command: str) -> bool:
+    """Return whether a command invokes HelloAGENTS scripts or its CLI."""
+    normalized = command.strip().lower()
+    if normalized.startswith("helloagents "):
+        return True
+    try:
+        tokens = [token.strip("\"'") for token in shlex.split(command, posix=False)]
+    except ValueError:
+        return False
+    if len(tokens) < 2:
+        return False
+    executable = tokens[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
+    if executable not in {"python", "python3", "python.exe", "python3.exe", "py", "py.exe"}:
+        return False
+    script = _python_script_argument(tokens[1:])
+    normalized_script = script.replace("\\", "/").lower()
+    return "helloagents/scripts/" in normalized_script
+
+
+def _python_script_argument(arguments: list[str]) -> str:
+    """Return the script argument from a supported Python command."""
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument in {"-c", "-m"}:
+            return ""
+        if argument in {"-X", "-W"}:
+            index += 2
+            continue
+        if argument == "--":
+            return arguments[index + 1] if index + 1 < len(arguments) else ""
+        if argument.startswith("-"):
+            index += 1
+            continue
+        return argument
+    return ""
+
+
+def _is_helloagents_hook(hook: dict) -> bool:
+    """Return whether a flat or matcher-group hook belongs to HelloAGENTS."""
+    candidates = [hook]
+    inner_hooks = hook.get("hooks")
+    if isinstance(inner_hooks, list):
+        candidates.extend(item for item in inner_hooks if isinstance(item, dict))
+    return any(
+        "HelloAGENTS" in candidate.get("description", "")
+        or _is_helloagents_command(candidate.get("command", ""))
+        for candidate in candidates
+    )
+
+
+def _has_helloagents_hooks(settings_path: Path) -> bool:
+    """Return whether a JSON settings file contains HelloAGENTS hooks."""
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    hooks = settings.get("hooks")
+    if not isinstance(hooks, dict):
+        return False
+    return any(
+        _is_helloagents_hook(hook)
+        for event_hooks in hooks.values()
+        if isinstance(event_hooks, list)
+        for hook in event_hooks
+        if isinstance(hook, dict)
+    )
+
+
 def check_config_integrity(cli_name: str) -> bool:
     """完整检测配置完整性。"""
     home = Path.home()
@@ -130,8 +205,7 @@ def check_config_integrity(cli_name: str) -> bool:
         if not settings_path.exists():
             return True
         try:
-            content = settings_path.read_text(encoding="utf-8")
-            return '"hooks"' in content and 'HelloAGENTS' in content
+            return _has_helloagents_hooks(settings_path)
         except Exception:
             return True
     elif cli_name == "codex":
@@ -148,14 +222,15 @@ def check_config_integrity(cli_name: str) -> bool:
         if not settings_path.exists():
             return True
         try:
-            content = settings_path.read_text(encoding="utf-8")
-            return '"hooks"' in content and 'HelloAGENTS' in content
+            return _has_helloagents_hooks(settings_path)
         except Exception:
             return True
     return True
 
 
 def main():
+    _configure_standard_streams()
+
     # 消费 stdin
     try:
         stdin_data = sys.stdin.read()
