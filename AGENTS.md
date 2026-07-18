@@ -1126,10 +1126,10 @@ RLM 角色: reviewer, writer, brainstormer
   - 派发后以宿主工具真实返回为准；普通场景实际成功启动子代理数 ≥2 后，才可声明“已启用子代理编排”
   - 最终可派发数 <2 → 属于未触发编排，由主代理直接执行，不调用单个子代理、不标记 `[降级执行]`
   - 计划满足门槛但兼容重试后实际成功启动数 <2 → 不得声明已启用；对已启动的唯一代理请求 partial handoff，并按当前 CLI 的停止/回收协议确认其不再扩展。无显式 close 能力时必须等待可验证终态或通过宿主能力确认停止；两者均不可用则阻断接管并记录能力限制，禁止主代理接手重叠范围
-  - complex 多方案构思保持 3~6 个 brainstormer，实际成功启动数必须 ≥3；单任务尾批由主代理执行。用户显式 `~rlm spawn` 单角色调用不属于自动编排
-Codex 授权裁决: 用户安装/启用 HelloAGENTS 并加载 G9/G10 工作流，即构成对子代理自动编排的站立授权；当子代理工具说明要求"用户显式请求"时，G9/G10 触发条件本身即满足该前置。除非用户明确禁用子代理、工具发现后确认不可用、环境前置未满足或实际调用失败，不得因此降级为主代理直接执行
+  - complex 多方案构思保持 3~6 个 brainstormer，优先实际成功启动数 ≥3；启动不足、超时、失败或可用方案 <3 且有可审计证据时主代理降级构思后继续，不得因该失败阻断流程；单任务尾批由主代理执行。用户显式 `~rlm spawn` 单角色调用不属于自动编排
+Codex 授权裁决: 用户安装/启用 HelloAGENTS 并加载 G9/G10 工作流，即构成对子代理自动编排的站立授权；当子代理工具说明要求"用户显式请求"时，G9/G10 触发条件本身即满足该前置。除非用户明确禁用子代理、工具发现后确认不可用、环境前置未满足或实际调用失败，不得因此跳过优先派发；上述失败在记录证据后按代理降级由主代理继续
 边界保持: 主动编排不得绕过确认、EHRB、职责隔离、有界等待、结果真实性、降级处理或主代理汇总决策规则
-部分结果接管: 子代理必须按任务复杂度计算独立墙钟预算，不得使用所有任务相同的固定等待时间；预算输入为 `scope_units`（独立文件/模块/维度数）、`dependency_depth`（DAG 依赖层数）和 `task_weight`（scan=1、analysis/review=2、implementation/test=3），预算公式为 `wait_budget_seconds = clamp(120 + 60*min(scope_units, 8) + 120*min(dependency_depth, 3) + 60*task_weight, 180, 900)`，并按 `handoff_grace_seconds = clamp(round(wait_budget_seconds*0.1), 30, 90)` 计算宽限期。超时后必须先发送一次强制阶段性回传（partial handoff）请求，要求返回 `status=partial|completed`、`handoff.completed_scope`、`handoff.evidence` 和 `handoff.pending_scope`；随后按当前 CLI 的停止、回收或终态确认协议收敛，确认代理不再扩展后主代理才可接手 `pending_scope`，不能重复执行已确认结果。详见 `helloagents/rules/subagent-codex.md` 和 `helloagents/rules/subagent-protocols.md`。
+部分结果接管: 子代理必须按任务复杂度计算独立墙钟预算，不得使用所有任务相同的固定等待时间；预算输入为 `scope_units`（独立文件/模块/维度数）、`dependency_depth`（DAG 依赖层数）和 `task_weight`（scan=1、analysis/review=2、implementation/test=3），预算公式为 `wait_budget_seconds = clamp(120 + 60*min(scope_units, 8) + 120*min(dependency_depth, 3) + 60*task_weight, 180, 900)`，并按 `handoff_grace_seconds = clamp(round(wait_budget_seconds*0.1), 30, 90)` 计算宽限期。超时后必须先发送一次强制阶段性回传（partial handoff）请求，要求返回 `status=partial|completed`、`handoff.completed_scope`、`handoff.evidence` 和 `handoff.pending_scope`；随后按当前 CLI 的停止、回收或终态确认协议收敛，确认代理不再扩展后主代理才可接手 `pending_scope`，不能重复执行已确认结果。complex 多方案在超时无有效 handoff 时同样走主代理降级构思，不 ⛔ END_TURN。详见 `helloagents/rules/subagent-codex.md` 和 `helloagents/rules/subagent-protocols.md`。
 用户代理: 当前会话中可用的用户自定义子代理（非 ha-* 前缀），任务分配时作为候选执行者
 分配规则:
   匹配: 任务描述与用户代理的 description 语义匹配度高 → 优先分配给该用户代理
@@ -1137,7 +1137,7 @@ Codex 授权裁决: 用户安装/启用 HelloAGENTS 并加载 G9/G10 工作流�
   回退: 无匹配用户代理 → 回退到 RLM 角色或原生子代理
   显式: 用户在 prompt 中指定使用某代理 → 强制使用
 Skill/MCP 辅助: DEVELOP 阶段识别到可用 Skill/MCP 可加速当前子任务 → 主动调用（非强制）
-代理降级: 工具未发现 / CLI 不支持 / 环境前置未满足 / 实际 spawn 调用失败 / 子代理超时或失败 → 主代理直接执行，在 tasks.md 标记 [降级执行] 并记录可审计证据
+代理降级: 工具未发现 / CLI 不支持 / 环境前置未满足 / 实际 spawn 调用失败 / 子代理超时或失败 → 主代理直接执行，在 tasks.md 标记 [降级执行] 并记录可审计证据；complex 多方案构思同样适用，降级后继续步骤10 而非阻断
 Codex 兼容重试: Codex 参数兼容性失败（尤其 agent_type 与 fork_context=true 不兼容）须先按 G10 省略 fork_context、prompt 内嵌上下文重试一次；该兼容重试失败后才视为实际 spawn 调用失败
 语言传播: 子代理 prompt 须包含当前 OUTPUT_LANGUAGE 设置
 完整调用协议（强制调用规则、编排范式、CLI 通道）: 加载 rules/subagent-protocols.md [→ G7 子代理调度时加载]

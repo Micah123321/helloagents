@@ -207,7 +207,9 @@ class SubagentRuleTests(unittest.TestCase):
 
         self.assertIn("最终可派发 brainstormer 少于 3 个时不得派发", design)
         self.assertIn("实际成功启动 brainstormer ≥3", design)
-        self.assertIn("计划 3~6 个且实际成功启动 ≥3 个子代理", protocols)
+        self.assertIn("主代理降级构思", design)
+        self.assertIn("计划 3~6 个", protocols)
+        self.assertIn("主代理降级构思", protocols)
         self.assertNotIn("复杂度: complex，已启用子代理编排", design)
 
     def test_runtime_and_docs_propagate_orchestration_gate(self):
@@ -255,7 +257,8 @@ class SubagentRuleTests(unittest.TestCase):
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         self.assertIn("complex 多方案构思计划3~6个 brainstormer", context)
         self.assertIn("实际成功启动≥3", context)
-        self.assertIn("至少返回3个代理独立生成的可用方案才可比较", context)
+        self.assertIn("主代理降级", context)
+        self.assertNotIn("至少返回3个代理独立生成的可用方案才可比较", context)
 
     def test_tool_unavailability_is_degradation_not_candidate_filtering(self):
         paths = (
@@ -346,9 +349,13 @@ class SubagentRuleTests(unittest.TestCase):
         design = read_text("helloagents/stages/design.md")
 
         self.assertIn("方案产出门槛", design)
-        self.assertIn("至少有 3 个由不同代理返回的可用方案", design)
-        self.assertIn("不得从空 pending_scope 生成整套替代方案", design)
+        self.assertIn("至少 3 个由不同代理返回的可用方案", design)
+        self.assertIn("不得从空 pending_scope 生成整套", design)
+        self.assertIn("主代理降级构思", design)
         self.assertIn("可用方案少于 3 个", design)
+        self.assertIn("进入「主代理降级构思」", design)
+        self.assertNotIn("可用方案少于 3 个 → 输出阻断错误", design)
+        self.assertNotIn("禁止主代理伪造缺失方案 → ⛔ END_TURN", design)
 
     def test_claude_split_preserves_orchestration_gate(self):
         split_rules = _split_agents_md(read_text("AGENTS.md"))

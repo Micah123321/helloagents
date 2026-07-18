@@ -122,7 +122,7 @@ DESIGN_RULES = """[HelloAGENTS DESIGN 阶段执行提醒]
 
 Phase1: 上下文收集 → 项目扫描 → 复杂度评估（TASK_COMPLEXITY）→ KB_SKIPPED 判定
 Phase2: 方案构思 → 方案包生成（proposal.md + tasks.md）→ validate_package.py 验收
-子代理门槛: 普通扫描/分析候选语义过滤后≥2且实际成功启动≥2才启用；complex 多方案构思计划3~6个 brainstormer，实际成功启动≥3且至少返回3个代理独立生成的可用方案才可比较
+子代理门槛: 普通扫描/分析候选语义过滤后≥2且实际成功启动≥2才启用；complex 多方案构思计划3~6个 brainstormer，优先实际成功启动≥3并用子代理方案比较；启动不足/超时/失败或可用方案不足时记录证据后主代理降级构思/补齐后继续，禁止伪造子代理产出
 完成后: 设置 CURRENT_STAGE=DEVELOP → 按 G7 加载 develop.md → 进入开发实施
 
 DO NOT: 跳过 Phase1 直接写方案 | 跳过方案包验收 | 设计完成后直接写代码不加载 develop.md"""
