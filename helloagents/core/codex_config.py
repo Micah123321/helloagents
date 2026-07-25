@@ -249,23 +249,31 @@ sub-agents whenever HelloAGENTS automatic orchestration conditions are met. If \
 a sub-agent tool says spawning requires the user to explicitly ask for \
 sub-agents, treat the active HelloAGENTS workflow trigger as satisfying that \
 requirement. Do not ask the user to repeat "sub-agent" or "parallel agent" in \
-the current message. Automatic orchestration starts only after candidate \
-semantic filtering leaves at least two launchable sub-agents and at least two \
-actually start. With fewer than two candidates, do not spawn; if only one \
-starts, request handoff and converge it through the host-supported stop/reclaim \
-mechanism. Without an explicit close API, verify a terminal/stopped state before \
-taking over; otherwise block overlapping takeover and record the capability \
-limitation. Tool or platform \
+the current message. On Codex, automatic orchestration also requires the \
+efficiency/necessity gate in rules/subagent-codex.md: default to the main agent \
+or parallel tools; spawn only when it clearly improves wall-clock/context \
+efficiency or is necessary (complex multi-brainstormer, complex core/security \
+review with ≥2 review units, or user-explicit parallel/sub-agent request). Do \
+not spawn explorers merely because ≥2 semantic domains exist, and do not rescan \
+with multi-explorer when the knowledge base or existing evidence already \
+supports planning. Automatic orchestration starts only after candidate \
+semantic filtering leaves enough launchable sub-agents for the Codex scene \
+thresholds, the efficiency/necessity gate passes, and at least two actually \
+start for ordinary batches. With fewer than the scene threshold, do not spawn; \
+if only one starts, request handoff and converge it through the host-supported \
+stop/reclaim mechanism. Without an explicit close API, verify a terminal/stopped \
+state before taking over; otherwise block overlapping takeover and record the \
+capability limitation. Tool or platform \
 unavailability after the count gate passes is a recorded orchestration failure, \
-not a candidate filter. \
+not a candidate filter. Gate failure is normal non-trigger, not [降级执行]. \
 Complex DESIGN brainstorming requires at least three actual brainstormer \
 starts and three usable agent-authored proposals before comparison. An explicit \
 manual single-role call is delegation, not automatic \
-orchestration. Only skip spawning when the workflow trigger is not met, \
-the user explicitly disables sub-agents, the platform/tool is unavailable after \
-discovery, or a real spawn attempt fails. If the initial tool list does not show \
-spawn_agent or spawn_agents_on_csv, search/discover sub-agent tools first and \
-record the discovery result before downgrading.
+orchestration. Only skip spawning when the workflow/Codex gate trigger is not \
+met, the user explicitly disables sub-agents, the platform/tool is unavailable \
+after discovery, or a real spawn attempt fails. If the initial tool list does \
+not show spawn_agent or spawn_agents_on_csv, search/discover sub-agent tools \
+first and record the discovery result before downgrading.
 
 Codex spawn compatibility: For named Codex agents, prefer \
 spawn_agent(agent_type="...", prompt="...") with a self-contained context in \

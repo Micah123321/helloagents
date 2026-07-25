@@ -157,47 +157,82 @@ request_user_input:
 ## Codex CLI 主动编排触发点（CRITICAL）
 
 ```yaml
-定位: 本节平衡稳定性策略的"失败兜底"信号——明确 Codex 在哪些场景应主动 spawn 子代理。
-子代理编排由实际工作单元数驱动（同 Claude Code），不要求用户显式说"子代理/并行代理"。
-下面是 Codex 环境下应主动 spawn 的典型场景，触发条件沿用 subagent-protocols.md 自动编排原则:
+定位: 本节平衡稳定性策略的"失败兜底"信号——明确 Codex 在哪些场景才应 spawn 子代理。
+关系: 共享自动编排原则、启用契约、语义过滤、handoff 与降级证据仍见 subagent-protocols.md。
+  本节在 Codex 通道上叠加「效率/必要性闸门」：collab wait 与上下文复制成本高于 Claude Task，
+  因此默认主代理或并行工具；仅当能显著提升效率或确有必要时才 spawn。
+  不要求用户显式说"子代理/并行代理"；但「仅因可拆成 ≥2 语义域」本身不足以在 Codex 上自动 spawn。
+站立授权: 用户安装/启用 HelloAGENTS 构成对「满足本节闸门」的自动编排授权，不是对任意 ≥2 单元滥 spawn 的授权。
+
+Codex 效率/必要性闸门（CRITICAL — 派发前必须通过）:
+  默认路径: 主代理直接执行，或同一消息内并行工具调用（Read/Grep/Glob/rg 等）
+  允许 spawn 仅当下列「必要性」或「显著提效」至少命中一类，且仍满足共享语义过滤与启用契约:
+
+  必要性（命中任一即可进入派发评估）:
+    - TASK_COMPLEXITY=complex 的 DESIGN 步骤10 multi-brainstormer（计划 3~6）
+    - complex + 核心/安全模块审查，且最终可派发审查单元 ≥2
+    - 用户显式要求并行/子代理，或 `~rlm spawn` 单角色委派（单角色不属于自动编排）
+
+  显著提效（须同时满足，缺一则不 spawn）:
+    - 通过共享语义过滤后最终可派发单元 ≥ 下方场景门槛
+    - 预估主代理串行墙钟或上下文压力明显高于并行（大仓多模块、大批量文件、长依赖链）
+    - 单元职责不重叠、无强数据依赖、非子代理开销 ≥ 收益（spawn+wait+汇总成本）
+
+  明确禁止（诊断实证: 2–3 域反复 explorer wait 却已可出方案）:
+    - 仅为 2–3 个语义域/目录就并行 2–3 个 explorer
+    - 知识库或已有扫描证据已覆盖规划所需事实时，再全仓/多域 explorer 重扫
+    - 主代理已能用并行工具在当前上下文完成的轻量读取/定位，却包装成子代理
+    - 为「凑够 ≥2 启动」而制造重复或伪独立任务
+    - 未达场景门槛却因共享总表「≥2」字面条件而 spawn
 
 DESIGN Phase1（上下文收集）:
-  ≥2 个可独立扫描的目录/模块 → spawn_agent(agent_type="explorer") 按目录拆分并行扫描（≤6/批）
-  ≥2 个可独立分析的依赖单元 → explorer 按单元拆分并行深度分析
-  单一目录/单元或新建项目 → 主代理直接执行
+  默认: 主代理 + 并行工具；知识库优先，只读与目标直接相关的证据
+  spawn explorer 仅当同时满足:
+    - 可独立一级目录/模块（过滤后）≥4
+    - 相关文件规模大（经验阈值: 总相关文件 ≥80，或单域过大导致主代理上下文放不下）
+    - 通过「显著提效」闸门
+  ≥4 且规模达标 → spawn_agent(agent_type="explorer") 按目录拆分并行扫描（≤6/批）
+  深度分析同口径: 过滤后独立分析单元 ≥4 且规模/收益达标 → explorer；否则主代理
+  2–3 个语义域、新建项目、最终扫描/分析组数 < 门槛 → 主代理直接执行，不 spawn
 
 DESIGN Phase2（方案构思，TASK_COMPLEXITY=complex）:
-  ≥3 个独立 brainstormer 并行，每个独立构思一个差异化方案，spawn 后立即 collab wait
+  必要性场景: ≥3 个独立 brainstormer 并行，每个独立构思一个差异化方案，spawn 后立即 collab wait
+  启动不足/超时/失败 → 按 design.md 主代理降级构思，不因「想并行」反复重扫
 
 DEVELOP 步骤6（代码实现）:
-  ≥2 个可独立并行的任务项 → spawn_agent(agent_type="worker") 按 DAG 层级或主代理判断并行
-  同层 ≥6 个结构相同的同构任务（相同指令模板+不同参数）→ 优先 spawn_agents_on_csv 批处理（CSV_BATCH_MAX>0 时）
+  默认主代理
+  spawn_agent(agent_type="worker") 仅当: 同层独立任务项（过滤后）≥3 且文件集不重叠，并过显著提效闸门
+  同层 ≥6 个结构相同的同构任务 → 优先 spawn_agents_on_csv（CSV_BATCH_MAX>0 时）
+  1–2 个任务项或尾批 1 项 → 主代理直接执行
 
 DEVELOP 步骤7（安全与质量检查，含任务收尾自发审查）:
-  complex+核心/安全模块 → 强制完成 reviewer 审查职责；最终可派发审查单元≥2 时 spawn reviewer/explorer，只有1个审查单元时由主代理按 reviewer 清单执行；prompt 必须内嵌完整审查上下文
-  其他任务但满足 ≥2 文件/维度 + 并行收益明确 → 按 ~review 规则 spawn reviewer/explorer 并行审查
-  任务收尾的自发代码审查（验收前自审，非显式 ~review）等同 ~review 处理，应主动编排
+  complex+核心/安全模块 → 强制完成 reviewer 审查职责（必要性）
+    最终可派发审查单元≥2 时 spawn reviewer/explorer；只有 1 个审查单元时主代理按 reviewer 清单执行
+    prompt 必须内嵌完整审查上下文
+  其他任务: 默认主代理；spawn 仅当审查文件 ≥6 或分析维度 ≥3 且通过显著提效闸门
+  任务收尾自发审查等同 ~review 口径，不得因「≥2 文件」字面条件自动 spawn
 
 DEVELOP 步骤8（测试编写）:
-  独立测试文件≥2 → worker 按文件分配并行编写
+  独立测试文件 ≥3 且通过显著提效 → worker 按文件分配并行编写；否则主代理
 
-命令路径（并行收益明确时主动编排）:
-  ~review: ≥2 个分析维度或审查文件≥2 且并行收益明确 → 按维度/文件组拆分并行审查
-    强项场景: 大批量文件审查（如≥6 个文件）→ spawn_agents_on_csv 批处理是 Codex 独有的高吞吐通道
-  ~verify: 同 ~review（审查+验证+修复场景），≥2 维度或文件≥2 且并行收益明确 → 并行
-  ~commit: 步骤2 变更分析/预提交质量检查，待提交文件≥2 或需多维度检查 → spawn explorer/reviewer 并行
-    临界区（步骤3 git add→commit/锁/偏差检测/推送）始终主代理独占，不拆子代理（临界区白名单）
-  ~test: 步骤3/4 失败定位，失败文件≥2 或失败维度独立 → spawn worker/explorer 并行定位根因
-  ~validatekb: ≥2 个验证维度或知识库文件≥2 → 并行验证
-  ~init: ≥2 个可独立扫描的模块目录 → explorer 并行扫描
+命令路径（须过效率/必要性闸门，非「≥2 即 spawn」）:
+  ~review / ~verify:
+    默认主代理
+    spawn: 审查文件 ≥6 或分析维度 ≥3 且收益明确；或 complex+核心/安全（必要性）
+    强项场景: 大批量文件（≥6）→ spawn_agents_on_csv 是 Codex 高吞吐通道
+  ~commit: 步骤2 变更分析/预提交检查，待提交文件 ≥4 且收益明确 → 才可 spawn explorer/reviewer
+    临界区（步骤3 git add→commit/锁/偏差检测/推送）始终主代理独占（临界区白名单）
+  ~test: 失败文件 ≥3 或失败维度独立且收益明确 → 才可 spawn worker/explorer
+  ~validatekb: 验证维度或知识库文件 ≥4 且收益明确 → 才可并行
+  ~init: 可独立扫描的模块目录 ≥4 且规模达标 → 才可 explorer 并行；否则主代理
 
 CSV 批处理主动判定（Codex 独有）:
   CSV_BATCH_MAX>0 且同层/同批 ≥6 个结构相同的任务 → 优先 spawn_agents_on_csv（异构任务仍用 spawn_agent）
-  CSV_BATCH_MAX=0 → 退回 spawn_agent 逐个执行
+  CSV_BATCH_MAX=0 → 退回 spawn_agent 逐个执行（仍须过本节闸门）
   拆批后的尾批只有 1 行 → 主代理直接执行，不为凑批或沿用前序编排状态启动单 worker
 
 工具发现前置（CRITICAL）:
-  当 G10 判定应主动编排，但当前可见工具列表未直接显示 spawn_agent 时:
+  当本节闸门判定应编排，但当前可见工具列表未直接显示 spawn_agent 时:
     1. 必须先调用 tool_search 搜索 "spawn_agent multi-agent subagent collab"
     2. 若发现 multi_agent_v1.spawn_agent 或等价单体子代理工具 → 按 Codex 调用协议使用该工具
        参数兼容性: 若 schema 不含 fork_context，或调用返回 unknown field/invalid argument/agent_type 与 fork_context 不兼容等参数错误，必须立即改用同一 agent_type 且省略 fork_context、将上下文写入 prompt 后重试一次；该兼容性重试不计入稳定性失败、不触发主代理降级。重试仍失败才记录为实际 spawn 调用失败
@@ -208,17 +243,19 @@ CSV 批处理主动判定（Codex 独有）:
     5. 工具发现失败、平台明确不可用或实际 spawn 调用失败 → 主代理直接执行，并记录为环境限制或调用失败证据
   禁止:
     - 仅凭初始工具列表未显示 spawn_agent 就判断无单体子代理通道
-    - 仅凭工具说明写有"用户显式要求"就跳过 HelloAGENTS 已触发的主动编排
+    - 仅凭工具说明写有"用户显式要求"就跳过已满足本节闸门的编排
+    - 把「闸门未通过」写成工具发现失败或 [降级执行]（闸门未过 = 正常未触发，主代理直做）
 
 环境前置（编排前一次性检测，非每次回避）:
   /experimental 未开启 或 agents.max_threads=0 → 跳过所有子代理调度，主代理直接执行 + 标记 [降级执行] + 记录环境证据（这是环境限制，不是回避）
-  检测通过 → 后续按上述触发点主动编排
+  检测通过 → 仍须过效率/必要性闸门后才按上述触发点编排
 
 边界（编排不得绕过，与稳定性策略一致）:
   确认、EHRB、阻塞等待（spawn 后立即 collab wait）、结果真实性、降级处理、主代理汇总决策、临界区白名单
 降级证据:
   降级报告必须说明触发原因: 工具发现失败 / 环境前置未满足 / 实际 spawn 调用失败 / 子代理超时或失败；禁止使用"可能只暴露批处理通道"等推测性描述作为直接降级依据
   Codex fork_context 参数兼容性失败不算最终实际 spawn 调用失败；必须先执行同一 agent_type、省略 fork_context、prompt 自包含上下文的兼容重试
+  闸门未通过: 不得标记 [降级执行]，属于合规未触发
 ```
 
 ---
@@ -227,8 +264,8 @@ CSV 批处理主动判定（Codex 独有）:
 
 ```yaml
 定位（重要）: 本节机制仅在"子代理已 spawn 并失败/超时/无返回"之后生效，
-  是编排失败后的兜底，不构成编排前回避子代理的理由。
-  Codex 与 Claude Code 一样应主动编排（见上方"主动编排触发点"），仅触发条件和调用通道不同。
+  是编排失败后的兜底，不构成编排前回避子代理的理由，也不把「效率/必要性闸门未通过」写成稳定性失败。
+  Codex 在通过上方触发点闸门后应编排；默认主代理是闸门策略，不是失败预判。
 
 目的: 子代理反复 spawn→wait→close 失败循环浪费上下文窗口时，切换到稳定的主代理执行路径
 
