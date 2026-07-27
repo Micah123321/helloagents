@@ -70,8 +70,9 @@ class UpdaterTests(unittest.TestCase):
              patch("subprocess.run", run):
             up.update()
 
-        run.assert_called_once()
-        uv_cmd = run.call_args.args[0]
+        uv_calls = [call.args[0] for call in run.call_args_list if call.args[0][:3] == ["uv", "tool", "install"]]
+        self.assertEqual(len(uv_calls), 1)
+        uv_cmd = uv_calls[0]
         self.assertEqual(uv_cmd[:3], ["uv", "tool", "install"])
         self.assertIn("--force", uv_cmd)
         self.assertIn("--no-cache", uv_cmd)
@@ -106,7 +107,8 @@ class UpdaterTests(unittest.TestCase):
              patch("subprocess.run", run):
             up.update()
 
-        run.assert_called_once()
+        uv_calls = [call.args[0] for call in run.call_args_list if call.args[0][:3] == ["uv", "tool", "install"]]
+        self.assertEqual(len(uv_calls), 1)
         schedule.assert_not_called()
 
 

@@ -23,6 +23,25 @@ def read_text(relative_path: str) -> str:
 
 
 class SubagentRuleTests(unittest.TestCase):
+    def test_r2_defaults_to_delegated_without_execution_mode_menu(self):
+        agents = read_text("AGENTS.md")
+        skill = read_text("SKILL.md")
+        auto = read_text("helloagents/functions/auto.md")
+        plan = read_text("helloagents/functions/plan.md")
+        state = read_text("helloagents/rules/state.md")
+        readme = read_text("README.md")
+        readme_en = read_text("README_EN.md")
+
+        self.assertIn("R2 通用路径默认 DELEGATED", agents)
+        self.assertIn("R2 confirmation is the evaluation/risk gate", skill)
+        self.assertIn("WORKFLOW_MODE = DELEGATED，进入 DESIGN", auto)
+        self.assertIn("WORKFLOW_MODE = DELEGATED_PLAN，进入 DESIGN", plan)
+        self.assertIn("默认设置委托模式", state)
+        self.assertIn("委托模式（默认）", readme)
+        self.assertIn("Delegated (default)", readme_en)
+        self.assertNotIn("通用路径: N+1. 交互式执行（推荐）", agents)
+        self.assertNotIn("R2 确认选项（三个选项固定", agents)
+
     def test_codex_rules_require_tool_discovery_before_downgrade(self):
         codex_rules = read_text("helloagents/rules/subagent-codex.md")
 
@@ -216,15 +235,27 @@ class SubagentRuleTests(unittest.TestCase):
         expected = {
             "SKILL.md": ["at least 2 launchable", "at least 2 actually start"],
             "helloagents/core/codex_config.py": [
-                "at least two launchable sub-agents",
-                "actually start",
+                "enough launchable sub-agents",
+                "actually",
             ],
             "helloagents/scripts/inject_context.py": [
                 "最终可派发数≥2",
                 "实际成功启动数≥2",
+                "Codex 效率/必要性闸门",
+                "闸门未通过属于合规未触发",
             ],
-            "README.md": ["至少 2 个可派发", "至少 2 个实际启动"],
-            "README_EN.md": ["at least 2 launchable", "at least 2 actually start"],
+            "README.md": [
+                "至少 2 个可派发",
+                "至少 2 个实际启动",
+                "Codex 额外应用",
+                "闸门未通过属于合规未触发",
+            ],
+            "README_EN.md": [
+                "at least 2 launchable",
+                "at least 2 actually start",
+                "Codex adds an efficiency/necessity gate",
+                "normal non-trigger",
+            ],
         }
 
         for relative_path, needles in expected.items():

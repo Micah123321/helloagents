@@ -85,6 +85,8 @@
 
 3 specialized roles (reviewer / writer / brainstormer) plus host CLI native sub-agents (explore / code / brainstorm) are dispatched automatically based on independent work units and parallelization value, without requiring the user to explicitly ask for "sub-agents" or "parallel agents". Automatic orchestration starts only when semantic filtering leaves at least 2 launchable candidates and at least 2 actually start; with fewer than 2 candidates no agent is spawned. A lone successful start hands off and converges through the host-supported stop/reclaim mechanism. When no explicit close API exists, wait for a verifiable terminal state or confirm stop through a host capability before taking over; if neither is possible, block overlapping takeover and record the capability limitation. Tool or platform unavailability is an orchestration failure after the count gate passes, not a candidate filter. Complex proposal brainstorming requires at least 3 actual brainstormer starts and at least 3 usable agent-authored proposals before comparison. Tasks are scheduled via DAG dependency analysis with layer-by-layer parallel dispatch.
 
+Codex adds an efficiency/necessity gate: default to the main agent or parallel tools, and spawn only when parallelism clearly improves efficiency, complex multi-proposal brainstorming or core/security review requires it, or the user explicitly requests parallel agents. Gate failure is a normal non-trigger and must not be marked as degradation; unavailable tools or an actual spawn failure still require evidence-based degradation handling.
+
 **Your gain:** complex tasks are broken down and handled by the right specialist, with parallel execution when possible.
 </td>
 <td width="50%" valign="top">
@@ -486,11 +488,11 @@ Typical pattern: `~plan` first → review → `~exec` to implement. Or just `~au
 
 ### Interactive vs Delegated Mode
 
-When `~auto` or `~plan` presents its confirmation, you choose:
+After `~auto` or a generic R2 task passes evaluation, it defaults to delegated execution; there is no repeated execution-mode menu:
 
-- **Interactive (default):** pauses at key decision points (plan selection, failure handling)
-- **Delegated (fully automatic):** auto-advances all stages, auto-selects recommended options, only pauses on EHRB risk
-- **Plan-only delegated:** fully automatic but stops after design, never enters development
+- **Delegated (default):** auto-advances all stages and selects recommended options, pausing only for real ambiguity, EHRB risk, or blocking failure
+- **Interactive (explicit):** pauses at key decision points only when the user explicitly requests interactive execution or stage-by-stage confirmation
+- **Plan-only delegated:** `~plan` always runs delegated planning, stopping after design without development
 
 Without `~` commands, plain-text input is automatically routed to R0–R2 based on complexity.
 
@@ -501,11 +503,11 @@ Before R2 tasks enter execution, the system scores requirements on four dimensio
 - `EVAL_MODE=1` (default, progressive): asks 1 insufficient dimension per round, up to 4 rounds
 - `EVAL_MODE=2` (one-shot): asks all insufficient dimensions at once, up to 2 rounds
 
-The last round of questioning is combined with confirmation (question + execution mode selection), reducing standalone confirmation steps. Context inferred from the existing codebase counts toward the score automatically. Say "skip evaluation / just do it" to bypass the questioning phase.
+The last round handles only the remaining requirement gaps. After evaluation passes, the workflow enters the fully delegated stage chain without another execution-mode choice. Context inferred from the existing codebase counts toward the score automatically. Say "skip evaluation / just do it" to bypass questioning; the workflow pauses only for real ambiguity, EHRB risk, or blocking failure.
 
 ### Parallel Design Proposals
 
-In the R2 standard path, the design stage dispatches 3–6 sub-agents to independently generate competing implementation proposals. The main agent evaluates all proposals across four dimensions: user value, solution soundness, risk (including EHRB), and implementation cost. Weights are dynamically adjusted based on project characteristics (e.g., performance-critical systems weight soundness higher; MVPs weight cost higher).
+Only when `TASK_COMPLEXITY=complex` and multi-proposal comparison is actually needed, the design stage plans 3–6 sub-agents to independently generate competing implementation proposals. The main agent evaluates all proposals across four dimensions: user value, solution soundness, risk (including EHRB), and implementation cost. Weights are dynamically adjusted based on project characteristics (e.g., performance-critical systems weight soundness higher; MVPs weight cost higher).
 
 - Interactive mode: user selects a proposal or requests re-generation (max 1 retry)
 - Delegated mode: recommended proposal is auto-selected

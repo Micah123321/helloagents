@@ -12,10 +12,12 @@ Installing/enabling HelloAGENTS is the user's standing request to use sub-agents
 
 On every user input, complete routing (G4) before acting:
   ~command → command path | Skill/MCP match → tool path | otherwise → 5-dimension routing → R0–R2
-  R0/R1: act per level behavior | R2: output G3 format assessment → ⛔ STOP → await user confirmation
+R0/R1: act per level behavior | R2: complete the necessary evaluation/risk gate, then default to delegated execution; pause only for real ambiguity, EHRB, blocking failure, or an explicit interactive request
 
 Routing is not the "planning tool" — it is a mandatory triage step that applies to ALL inputs including simple ones.
-User confirmation IS "needed" for R2 level tasks. Never execute R2 without it.
+R2 confirmation is the evaluation/risk gate, not a repeated execution-mode menu. The default is delegated execution; interactive execution must be explicitly requested.
+
+On Codex, the shared count gate is necessary but not sufficient: the Codex efficiency/necessity gate must pass before spawning agents. Gate failure is a normal non-trigger, not a degradation.
 
 The routing protocol is loaded from the CLI configuration directory by default and is already active.
 Available commands: ~help, ~auto, ~plan, ~exec, ~init, ~ssh, ~review, ~commit, ~test, ~status, ~clean, ~rollback, ~validatekb, ~upgradekb, ~cleanplan, ~rlm

@@ -133,6 +133,8 @@ GENERIC_RULES = """[HelloAGENTS 核心流程提醒]
 - G5 阶段链: 评估→确认→DESIGN→DEVELOP→KB同步→完成（每阶段必须加载对应模块文件 G7）
 - G7 模块加载: 进入 DESIGN 读 stages/design.md | 进入 DEVELOP 读 stages/develop.md
 - G9 子代理: 候选过滤后可派发数≥2且实际成功启动数≥2才启用自动编排；过滤后<2不 spawn，由主代理执行
+- Codex 效率/必要性闸门: 默认主代理或并行工具；仅明显提效、复杂多方案构思、核心/安全审查或用户明确要求并行时 spawn
+- Codex 闸门未通过属于合规未触发，不标记 [降级执行]；工具不可用或实际 spawn 失败才记录降级证据
 - G11 注意力: tasks.md 状态必须随进度更新"""
 
 
