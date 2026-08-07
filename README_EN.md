@@ -521,6 +521,15 @@ When an R2 task meets all of the following conditions, it automatically enters t
 
 Lightweight behavior: skips proposal.md / tasks.md creation, outputs a ≤200-word solution summary, then enters DEVELOP. The main agent executes directly only when the task is confirmed to be a single work unit; if ≥2 independent work units with clear parallelization value are detected, HelloAGENTS either orchestrates sub-agents via G10 or falls back to the standard path. Validation still follows R1-level acceptance criteria, runs detected project tools when available, and skips full delivery acceptance. Falls back to the standard path if conditions aren't met.
 
+### Complex Coding Checkpoint Batches
+
+When `TASK_COMPLEXITY=complex`, code files are involved, and `tasks.md` explicitly declares `@execution_strategy: checkpoint-batch`, development advances through DAG-ready batches:
+
+- A batch contains at most 3 atomic tasks with no risk signal, at most 2 with `context_near_limit` or `output_scope_large`, and at most 1 with `agent_wait_degraded` or `compaction_state_missing`; `package_incomplete` blocks the batch before execution and cannot be bypassed with a single task.
+- Each batch locks its scope, implements only that scope, runs focused verification/static/security checks, and updates state. Downstream batches do not start until the current batch passes.
+- `.status.json.pipeline` stores only the current batch, checkpoint, risk signals, verified scope, and resume scope. Compaction recovery does not inject full agent history or fabricate a successful resume.
+- Each batch reports completed scope, verification results, blockers, and the next batch only. Simple, moderate, and lightweight tasks keep the existing fast path, and legacy packages without the strategy remain compatible.
+
 ### Auto Dependency Management
 
 During development, the system auto-detects the project's package manager via lockfiles (`yarn.lock` → yarn, `uv.lock` → uv, `Gemfile.lock` → bundler, etc.) and handles dependencies:

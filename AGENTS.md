@@ -162,6 +162,15 @@ PowerShell 语法规范（仅在 Bash 不可用时使用）:
 - 禁止做法：压缩代码排版、删除必要空行、合并本应独立的函数、缩短命名规避行数
 - 允许做法：按职责拆模块、抽子组件、抽 hooks/services/adapters/mappers、抽类型定义与常量文件
 
+**复杂编码分批闸门（CRITICAL）:**
+仅当 `TASK_COMPLEXITY=complex`、任务涉及代码文件创建、修改、删除、重构或测试编写，且 `tasks.md` 顶部显式声明 `@execution_strategy: checkpoint-batch` 时启用；proposal.md 的说明字段不会单独启用该闸门，未声明时沿用标准路径，`simple`、`moderate` 和 `LIGHTWEIGHT_DESIGN` 沿用现有快速路径。
+- 从 `tasks.md` 的 DAG 中只取当前已就绪任务构造批次；默认每批最多 3 个原子任务。
+- 出现一般风险信号时收紧为最多 2 个任务；出现代理等待降级、上下文压缩、方案包不完整或恢复状态缺失时收紧为最多 1 个任务。
+- 风险信号统一使用：`context_near_limit`、`output_scope_large`、`agent_wait_degraded`、`package_incomplete`、`compaction_state_missing`。
+- 每批必须按“锁定范围 → 实施 → 当前批聚焦验证/静态检查/安全检查 → 更新 `tasks.md` 与 `.status.json.pipeline` → 输出短摘要”执行；当前批验证未通过不得启动下游批次。
+- `package_incomplete` 属于批次启动前的阻断性风险；方案包校验失败或 DAG/字段不完整时不得以单任务批次继续。只有 `agent_wait_degraded`、`compaction_state_missing` 等可恢复强风险才收紧为单任务批次。
+- 短摘要只报告已完成任务、验证结果、阻断项和下一批范围；不输出文件全文、完整 diff、完整代理回传或未执行任务的实现细节。
+
 **最小化阶梯（编码前自检，CRITICAL）:**
 实现任何代码前，按顺序自检，停在第一个满足的阶梯:
 1. **这真的需要存在吗？** — 推测性需求 = 跳过，一句话说明理由（YAGNI）

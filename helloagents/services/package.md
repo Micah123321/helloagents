@@ -46,6 +46,8 @@
     - 每个任务包含文件路径或明确作用范围
     - 每个任务包含预期变更、完成标准、验证方式、depends_on
     - 任务可独立执行、独立验证，依赖关系可拓扑排序
+    - 复杂编码任务若使用 checkpoint-batch，必须声明 @execution_strategy、@batch_policy、@pipeline_state
+    - checkpoint-batch 任务必须补充 batch_id、checkpoint、batch_verify，且每批边界可独立验证
     - code-review 方案包默认只写入保守方案任务；激进方案作为 proposal.md 备选，不进入默认待执行任务列表
 ```
 
@@ -63,8 +65,8 @@
 
 ```yaml
 触发: 任务完成后、阶段转换时
-流程: 读取 tasks.md → 统计状态 → 计算百分比 → 更新 LIVE_STATUS 区域 → 追加日志
-LIVE_STATUS 格式: 按 G11 定义
+流程: 读取 tasks.md → 统计状态 → 计算百分比 → 更新方案包 .status.json → 追加日志
+.status.json 格式: 按 G11 定义；checkpoint-batch 任务同时保留并更新 .status.json.pipeline
 返回: success, progress
 ```
 
@@ -97,6 +99,12 @@ LIVE_STATUS 格式: 按 G11 定义
   ⚠️ 警告性: proposal.md 缺少方案取舍、验证策略或风险边界
   ⚠️ 警告性: tasks.md 任务缺少文件路径/作用范围、预期变更、完成标准、验证方式或 depends_on
   ⚠️ 警告性: tasks.md 任务粒度过大，无法独立验证
+checkpoint-batch 特殊契约（仅 @execution_strategy: checkpoint-batch 时启用）:
+  ⛔ 阻断性: @task_complexity 必须为 complex；缺少 @batch_policy 或 @pipeline_state
+  ⛔ 阻断性: 每个任务必须包含 batch_id、checkpoint、batch_verify，以及现有的预期变更、完成标准、验证方式、depends_on
+  ⛔ 阻断性: batch_verify 不能为空或保留模板占位符；depends_on 必须能形成可拓扑排序的 DAG
+  ⛔ 阻断性: 契约校验失败对应 package_incomplete，开发阶段不得用单任务批次绕过
+兼容规则: 未声明 checkpoint-batch 的旧方案包沿用原有校验，不因缺少新字段阻断执行
 ```
 
 ---

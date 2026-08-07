@@ -532,6 +532,15 @@ R2 任务进入执行前，系统会对需求进行四维评分（需求范围 0
 
 轻量路径行为：跳过 proposal.md / tasks.md 创建，输出 ≤ 200 字的方案摘要后直接进入 DEVELOP。仅当任务确认为单一工作单元时由主代理直接执行；若识别出 ≥2 个独立工作单元且并行收益明确，则按 G10 编排子代理或回退标准路径。验证仍按 R1 验收标准执行，探测项目工具后可用则运行，并跳过完整交付验收。条件不满足时自动回退到标准路径。
 
+### 复杂编码检查点批次
+
+当任务同时满足 `TASK_COMPLEXITY=complex`、涉及代码文件且 `tasks.md` 显式声明 `@execution_strategy: checkpoint-batch` 时，开发阶段按 DAG 的 ready 任务分批推进：
+
+- 无风险时每批最多 3 个原子任务；`context_near_limit` 或 `output_scope_large` 时最多 2 个；`agent_wait_degraded` 或 `compaction_state_missing` 时最多 1 个；`package_incomplete` 在批次启动前阻断，不允许以单任务绕过。
+- 每批依次执行范围锁定、当前批实施、聚焦验证/静态检查/安全检查和状态更新；当前批未通过时不启动下游批次。
+- `.status.json.pipeline` 只保存当前批、检查点、风险信号、已验证范围和恢复范围；压缩恢复不会注入完整代理历史，也不会伪造恢复成功。
+- 每批进度只输出已完成范围、验证结果、阻断项和下一批范围。simple、moderate、lightweight 任务继续使用原快速路径，未声明新策略的旧方案包不受影响。
+
 ### 开发阶段自动依赖管理
 
 开发阶段会自动检测项目的包管理器（通过 lockfile 识别：`yarn.lock` → yarn、`uv.lock` → uv、`Gemfile.lock` → bundler 等），并处理依赖问题：

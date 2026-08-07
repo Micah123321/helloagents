@@ -116,7 +116,7 @@ CLI 一致性（CRITICAL）:
   - 提交临界区: git add → git commit（~commit 步骤3，commit.lock 保护段）
   - 并发锁管理: commit.lock 获取/死锁检测/释放、偏差检测快照对比（~commit 步骤3）
   - EHRB 确认: G2 风险确认与升级（所有阶段）
-  - 状态文件写入: .status.json、tasks.md 状态符号与 LIVE_STATUS、进度快照（所有阶段）
+  - 状态文件写入: .status.json、tasks.md 状态符号与 checkpoint pipeline、进度快照（所有阶段）
   - 方案包归档: migrate_package.py 调用、archive/_index.md 更新、INDEX.md 活跃指向清除（DEVELOP 步骤14、~clean）
   - 推送/远程: git push/pull/rebase（~commit 步骤3 推送段）
 

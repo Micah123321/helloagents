@@ -4,8 +4,8 @@
 HelloAGENTS PostToolUse Hook — 进度快照自动触发
 
 每次 Write/Edit/NotebookEdit 操作后触发（Claude Code/Grok: async=false, Gemini: async=true）。
-维护写操作计数器，每 THRESHOLD 次写操作时自动更新 tasks.md 的
-LIVE_STATUS 区域和执行日志。
+维护写操作计数器，每 THRESHOLD 次写操作时自动更新方案包 .status.json
+和执行日志。
 
 输入(stdin): JSON，包含 tool_name, cwd 等字段
 输出(stdout): 无（async hook 不需要返回数据）
@@ -19,14 +19,15 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-# Windows UTF-8 编码设置
-if sys.platform == 'win32':
-    if hasattr(sys.stdout, 'buffer'):
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    if hasattr(sys.stderr, 'buffer'):
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-    if hasattr(sys.stdin, 'buffer'):
-        sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='replace')
+def _setup_windows_encoding():
+    """Configure UTF-8 streams only when the hook runs as a CLI."""
+    if sys.platform == 'win32':
+        if hasattr(sys.stdout, 'buffer'):
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        if hasattr(sys.stderr, 'buffer'):
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+        if hasattr(sys.stdin, 'buffer'):
+            sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='replace')
 
 # 每 N 次写操作触发一次快照
 THRESHOLD = 5
@@ -140,6 +141,35 @@ def _get_current_task(content: str) -> str:
     return "-"
 
 
+def _load_pipeline_state(status_path: Path) -> dict | None:
+    """读取已有 pipeline，避免普通快照覆盖批次恢复状态。"""
+    if not status_path.is_file():
+        return None
+    try:
+        existing = json.loads(status_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(existing, dict):
+        return None
+    pipeline = existing.get("pipeline")
+    if not isinstance(pipeline, dict):
+        return None
+    if pipeline.get("mode") != "checkpoint-batch":
+        return None
+    if any(
+        not isinstance(pipeline.get(field), str)
+        or not pipeline[field].strip()
+        for field in ("mode", "batch_id", "checkpoint", "state")
+    ):
+        return None
+    if any(
+        not isinstance(pipeline.get(field), list)
+        for field in ("task_ids", "risk_signals", "verified_scope", "resume_scope")
+    ):
+        return None
+    return pipeline
+
+
 def _write_status_json(tasks_path: Path, stats: dict, content: str):
     """写入 .status.json 到方案包目录。"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -148,6 +178,7 @@ def _write_status_json(tasks_path: Path, stats: dict, content: str):
     pct = round(done / total * 100) if total > 0 else 0
     status = _determine_status(stats)
     current = _get_current_task(content)
+    status_path = tasks_path.parent / ".status.json"
 
     status_data = {
         "status": status,
@@ -162,8 +193,10 @@ def _write_status_json(tasks_path: Path, stats: dict, content: str):
         "current": current,
         "updated_at": now,
     }
+    pipeline = _load_pipeline_state(status_path)
+    if pipeline is not None:
+        status_data["pipeline"] = pipeline
 
-    status_path = tasks_path.parent / ".status.json"
     try:
         status_path.write_text(
             json.dumps(status_data, ensure_ascii=False, indent=2),
@@ -282,4 +315,5 @@ def main():
 
 
 if __name__ == "__main__":
+    _setup_windows_encoding()
     main()

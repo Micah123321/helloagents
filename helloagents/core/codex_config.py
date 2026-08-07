@@ -283,9 +283,11 @@ combination occurs, it is not final failure evidence until the same agent_type \
 has been retried with fork_context omitted and the required context embedded in \
 the prompt. This avoids a first incompatible spawn attempt before retrying.
 
+Complex coding checkpoint-batch policy: When TASK_COMPLEXITY=complex and tasks.md explicitly declares @execution_strategy: checkpoint-batch, select only DAG-ready tasks for the current batch. Use at most 3 tasks with no risk signal, at most 2 with context_near_limit or output_scope_large, and at most 1 with recoverable risks such as agent_wait_degraded or compaction_state_missing. package_incomplete blocks the batch before execution and cannot be bypassed with a single task. Implement and verify the current batch before unlocking downstream tasks, then update tasks.md and the optional .status.json.pipeline. Keep each batch response short: completed scope, verification result, blockers, and next batch only; never dump full files, diffs, or historical agent output. simple, moderate, and lightweight tasks keep their existing fast path.
 If context was compressed during the session (previous messages were summarized, \
-not at session start): Immediately read {KB_ROOT}/plan/*/tasks.md (specifically \
-LIVE_STATUS section) to restore workflow state (all G6-defined state variables: \
+not at session start): Immediately read {KB_ROOT}/plan/*/tasks.md and the \
+package .status.json (specifically the current status/pipeline summary) to restore \
+workflow state (all G6-defined state variables: \
 workflow variables, task complexity variables, knowledge base and package \
 variables). Combine restored state with current user input to determine actual \
 current state and correct next action, avoiding incorrect re-evaluation or stage \

@@ -22,18 +22,27 @@ import re
 import io
 from pathlib import Path
 
-# Windows UTF-8 编码设置
-if sys.platform == 'win32':
-    if hasattr(sys.stdout, 'buffer'):
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    if hasattr(sys.stderr, 'buffer'):
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-    if hasattr(sys.stdin, 'buffer'):
-        sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='replace')
+def _setup_windows_encoding():
+    """Configure UTF-8 streams only when the hook runs as a CLI."""
+    if sys.platform == 'win32':
+        if hasattr(sys.stdout, 'buffer'):
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        if hasattr(sys.stderr, 'buffer'):
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+        if hasattr(sys.stdin, 'buffer'):
+            sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='replace')
 
 # 限制注入内容大小，避免 token 膨胀
 MAX_MAIN_AGENT_CHARS = 20000
 MAX_SUBAGENT_CHARS = 15000
+CHECKPOINT_STRATEGY = "checkpoint-batch"
+PIPELINE_STRING_FIELDS = ("mode", "batch_id", "checkpoint", "state")
+PIPELINE_LIST_FIELDS = (
+    "task_ids",
+    "risk_signals",
+    "verified_scope",
+    "resume_scope",
+)
 
 
 def _fallback_reminder() -> dict:
@@ -96,6 +105,95 @@ def detect_stage(cwd: str) -> str:
     return ""
 
 
+def _format_pipeline_value(value) -> str:
+    """Format a small pipeline field without injecting unbounded state."""
+    if isinstance(value, list):
+        value = ", ".join(str(item)[:100] for item in value) or "-"
+    return str(value)[:300]
+
+
+def _is_valid_pipeline(candidate) -> bool:
+    """Reject incomplete pipeline data before it reaches recovery context."""
+    if not isinstance(candidate, dict):
+        return False
+    if candidate.get("mode") != CHECKPOINT_STRATEGY:
+        return False
+    if any(
+        not isinstance(candidate.get(field), str)
+        or not candidate[field].strip()
+        for field in PIPELINE_STRING_FIELDS
+    ):
+        return False
+    return all(isinstance(candidate.get(field), list) for field in PIPELINE_LIST_FIELDS)
+
+
+def _get_checkpoint_pipeline_context(cwd: str) -> str:
+    """Read only the current checkpoint summary for an active package."""
+    plan_dir = Path(cwd) / ".helloagents" / "plan"
+    if not plan_dir.is_dir():
+        return ""
+
+    pkg_dirs = sorted(
+        [d for d in plan_dir.iterdir() if d.is_dir()],
+        key=lambda d: d.name,
+    )
+    if not pkg_dirs:
+        return ""
+
+    package = pkg_dirs[-1]
+    tasks_file = package / "tasks.md"
+    if not tasks_file.is_file():
+        return ""
+    try:
+        tasks_content = tasks_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+    if not re.search(
+        rf'^\s*@execution_strategy\s*:\s*{re.escape(CHECKPOINT_STRATEGY)}\s*$',
+        tasks_content,
+        re.MULTILINE,
+    ) or not re.search(
+        r'^\s*@task_complexity\s*:\s*complex\s*$',
+        tasks_content,
+        re.MULTILINE,
+    ):
+        return ""
+
+    status_file = package / ".status.json"
+    pipeline = None
+    if status_file.is_file():
+        try:
+            status = json.loads(status_file.read_text(encoding="utf-8"))
+            candidate = status.get("pipeline") if isinstance(status, dict) else None
+            if _is_valid_pipeline(candidate):
+                pipeline = candidate
+        except (json.JSONDecodeError, OSError):
+            pipeline = None
+
+    if pipeline is None:
+        return (
+            "[HelloAGENTS checkpoint-batch 状态]\n"
+            "- state: missing\n"
+            "- risk_signals: compaction_state_missing\n"
+            "- resume_scope: 先读取 tasks.md 和 proposal.md 重建当前批次"
+        )
+
+    risk_signals = _format_pipeline_value(pipeline.get("risk_signals", []))
+    return "\n".join(
+        (
+            "[HelloAGENTS checkpoint-batch 状态]",
+            f"- batch_id: {_format_pipeline_value(pipeline.get('batch_id', '-'))}",
+            f"- checkpoint: {_format_pipeline_value(pipeline.get('checkpoint', '-'))}",
+            f"- state: {_format_pipeline_value(pipeline.get('state', '-'))}",
+            f"- task_ids: {_format_pipeline_value(pipeline.get('task_ids', []))}",
+            f"- risk_signals: {risk_signals}",
+            f"- verified_scope: {_format_pipeline_value(pipeline.get('verified_scope', []))}",
+            f"- resume_scope: {_format_pipeline_value(pipeline.get('resume_scope', []))}",
+        )
+    )
+
+
 # ---------------------------------------------------------------------------
 # 阶段规则摘要（硬编码关键执行步骤，不依赖文件截断）
 # ---------------------------------------------------------------------------
@@ -106,8 +204,9 @@ DEVELOP_RULES = """[HelloAGENTS DEVELOP 阶段执行提醒]
 1. 加载模块: 读取 stages/develop.md + services/package.md（G7 规则，不可跳过）
 2. 确定方案包: 读取 CURRENT_PACKAGE 的 tasks.md 和 proposal.md
 3. 按任务清单逐项执行: 先过滤独立候选；最终可派发数≥2且实际成功启动数≥2后才启用自动编排（G9）
+3.1 复杂编码且 execution_strategy=checkpoint-batch 时，只执行当前 DAG ready 批；package_incomplete 在批次启动前阻断；无风险最多3项，一般风险最多2项，可恢复强风险最多1项；批后验证通过才解锁下游
 4. 子代理协议: 遇到 [→ G10] 或 [RLM:角色名] 时按 G7 加载 rules/subagent-protocols.md
-5. 每个任务完成后更新 tasks.md 状态符号（[ ]→[√]/[X]/[-]）+ LIVE_STATUS 区域
+5. 每个任务完成后更新 tasks.md 状态符号（[ ]→[√]/[X]/[-]）+ .status.json；checkpoint-batch 任务同步更新 .status.json.pipeline
 6. 安全与质量检查（步骤7）
 7. 测试执行与验证（步骤8）
 8. 功能验收测试（步骤9）: 模拟最终用户首次使用场景，验证交付物可正常工作。测试通过≠用户可用
@@ -237,10 +336,13 @@ def handle_user_prompt_submit(cwd: str) -> dict:
 
     # 3. 阶段规则注入（优先于通用 CRITICAL 提取）
     if stage == "DEVELOP":
+    pipeline_ctx = _get_checkpoint_pipeline_context(cwd)
         ctx = DEVELOP_RULES
         if agents_ctx:
             ctx += "\n\n" + agents_ctx
         return {
+        if pipeline_ctx:
+            ctx += "\n\n" + pipeline_ctx
             "hookSpecificOutput": {
                 "hookEventName": "UserPromptSubmit",
                 "additionalContext": ctx,
@@ -309,6 +411,7 @@ def handle_subagent_start(cwd: str) -> dict:
 
     # 1. 读取 context.md（项目上下文摘要）
     context_file = ha_dir / "context.md"
+    pipeline_ctx = _get_checkpoint_pipeline_context(cwd)
     if context_file.is_file():
         try:
             ctx = context_file.read_text(encoding="utf-8").strip()
@@ -360,9 +463,7 @@ def handle_subagent_start(cwd: str) -> dict:
     if not parts:
         return {}
 
-    combined = "\n\n".join(parts)
-    if len(combined) > MAX_SUBAGENT_CHARS:
-        combined = combined[:MAX_SUBAGENT_CHARS] + "\n...(已截断)"
+    combined = _assemble_subagent_context(parts, pipeline_ctx)
 
     return {
         "hookSpecificOutput": {
@@ -376,6 +477,24 @@ def handle_subagent_start(cwd: str) -> dict:
 
 def main():
     """主入口: 从 stdin 读取 hook 事件 JSON，按 hookEventName 分发处理。
+
+def _assemble_subagent_context(parts: list[str], pipeline_ctx: str) -> str:
+    """Keep the current checkpoint summary visible when other context is long."""
+    body = "\n\n".join(parts)
+    if not pipeline_ctx:
+        return body[:MAX_SUBAGENT_CHARS] + (
+            "\n...(已截断)" if len(body) > MAX_SUBAGENT_CHARS else ""
+        )
+
+    checkpoint = f"## 当前检查点\n{pipeline_ctx}"
+    separator = "\n\n"
+    body_limit = MAX_SUBAGENT_CHARS - len(checkpoint) - len(separator)
+    if body_limit <= 0:
+        return checkpoint[:MAX_SUBAGENT_CHARS]
+    if len(body) > body_limit:
+        marker = "\n...(方案上下文已截断)"
+        body = body[: max(0, body_limit - len(marker))] + marker
+    return f"{body}{separator}{checkpoint}"
 
     支持事件名映射，使 Gemini/Grok 等 CLI 的事件名映射到等效的 Claude Code 事件。
     """
@@ -409,3 +528,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    _setup_windows_encoding()

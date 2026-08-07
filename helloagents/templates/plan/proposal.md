@@ -9,6 +9,26 @@
 创建: {YYYY-MM-DD}
 ```
 
+## 复杂编码执行策略（可选）
+
+> 仅当任务涉及多个代码文件/模块并判定为 `TASK_COMPLEXITY=complex` 时填写。simple、moderate 和轻量路径保持原有执行方式。
+
+```yaml
+execution_strategy: standard / checkpoint-batch
+batch_policy: max3-normal-max2-risk-max1-strong-risk
+risk_signals:
+  - context_near_limit
+  - output_scope_large
+  - agent_wait_degraded
+  - package_incomplete
+  - compaction_state_missing
+pipeline_state: optional-status-json-pipeline
+```
+
+此处只记录设计意图；运行时策略事实源是 `tasks.md` 顶部的 `@task_complexity`、`@execution_strategy`、`@batch_policy` 和 `@pipeline_state` 元数据。仅在 proposal.md 中填写策略不会启用 checkpoint-batch。
+
+`checkpoint-batch` 必须以当前 DAG 的 ready 任务构造小批次；当前批的实现、聚焦验证和状态更新完成后，才允许启动下一批。验证失败时保留阻断状态，不得静默放行下游。
+
 ---
 
 ## 1. 需求

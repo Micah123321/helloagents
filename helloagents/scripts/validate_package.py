@@ -40,6 +40,163 @@ TASK_STATUS = {
 # 方案包必需文件
 REQUIRED_FILES = ["proposal.md", "tasks.md"]
 OPTIONAL_FILES = []
+CHECKPOINT_STRATEGY = "checkpoint-batch"
+CHECKPOINT_TASK_FIELDS = (
+    "预期变更",
+    "完成标准",
+    "验证方式",
+    "depends_on",
+    "batch_id",
+    "checkpoint",
+    "batch_verify",
+)
+DEPENDENCY_ID_PATTERN = re.compile(r"\d+(?:\.\d+)*")
+TEMPLATE_PLACEHOLDER_PATTERN = re.compile(
+    r"\{[^{}\n]*(?:可选|文件路径|具体功能|该文件|当前批|"
+    r"验证命令|YYYY-MM-DD|simple\|moderate\|complex|pkg_type|feature)"
+    r"[^{}\n]*\}"
+)
+TASK_LINE_PATTERN = re.compile(
+    r'^\s*[-*]\s*\[([ √X\-?])\]\s*(.+)$', re.MULTILINE
+)
+TASK_ID_PATTERN = re.compile(
+    r'^\s*[-*]\s*\[[ √X\-?]\]\s*(\d+(?:\.\d+)*)\b'
+)
+
+
+def parse_metadata(tasks_content: str) -> dict:
+    """解析 tasks.md 顶部的 @key: value 元数据。"""
+    metadata = {}
+    for match in re.finditer(
+        r'^\s*@([A-Za-z_][\w-]*)\s*:\s*(.*?)\s*$',
+        tasks_content,
+        re.MULTILINE,
+    ):
+        metadata[match.group(1)] = match.group(2).strip()
+    return metadata
+
+
+def _extract_task_blocks(tasks_content: str) -> list[str]:
+    """提取任务行到下一任务行之间的完整任务块。"""
+    matches = list(TASK_LINE_PATTERN.finditer(tasks_content))
+    return [
+        tasks_content[match.start():matches[index + 1].start() if index + 1 < len(matches) else len(tasks_content)]
+        for index, match in enumerate(matches)
+    ]
+
+
+def _task_field_value(task_block: str, field: str) -> str:
+    """读取任务块中的缩进字段值。"""
+    match = re.search(
+        rf'^\s*-\s*{re.escape(field)}\s*:\s*(.*?)\s*$',
+        task_block,
+        re.MULTILINE,
+    )
+    return match.group(1).strip() if match else ""
+
+
+def _is_placeholder(value: str) -> bool:
+    """判断字段是否为空或仍保留模板占位符。"""
+    return not value.strip() or bool(TEMPLATE_PLACEHOLDER_PATTERN.search(value))
+
+
+def _parse_dependencies(raw_value: str) -> tuple[set[str], list[str]]:
+    """解析有限格式的 depends_on 列表，并拒绝静默丢弃的 token。"""
+    raw_value = raw_value.strip()
+    if raw_value == "[]":
+        return set(), []
+    if not (raw_value.startswith("[") and raw_value.endswith("]")):
+        return set(), ["depends_on 必须使用列表格式，例如 [] 或 [1.1]"]
+
+    body = raw_value[1:-1].strip()
+    if not body:
+        return set(), []
+
+    dependencies = set()
+    issues = []
+    for item in body.split(","):
+        token = item.strip()
+        if len(token) >= 2 and token[0] in "\"'" and token[-1] == token[0]:
+            token = token[1:-1].strip()
+        if not token:
+            issues.append("depends_on 包含空依赖项")
+        elif not DEPENDENCY_ID_PATTERN.fullmatch(token):
+            issues.append(f"depends_on 包含非法任务编号: {token}")
+        else:
+            dependencies.add(token)
+    return dependencies, issues
+
+
+def validate_checkpoint_contract(tasks_content: str, tasks: dict) -> dict:
+    """校验 checkpoint-batch 方案包的元数据、任务字段和 DAG。"""
+    metadata = parse_metadata(tasks_content)
+    contract = {
+        "enabled": metadata.get("execution_strategy") == CHECKPOINT_STRATEGY,
+        "metadata": metadata,
+        "task_count": tasks.get("total", 0),
+        "issues": [],
+    }
+    if not contract["enabled"]:
+        return contract
+
+    if metadata.get("task_complexity") != "complex":
+        contract["issues"].append("@task_complexity 必须为 complex")
+    for key in ("batch_policy", "pipeline_state"):
+        if _is_placeholder(metadata.get(key, "")):
+            contract["issues"].append(f"缺少 @ {key} 元数据".replace("@ ", "@"))
+
+    task_blocks = _extract_task_blocks(tasks_content)
+    if not task_blocks:
+        contract["issues"].append("tasks.md 中没有可校验的任务项")
+        return contract
+
+    task_ids = []
+    dependencies = {}
+    for task_block in task_blocks:
+        id_match = TASK_ID_PATTERN.search(task_block)
+        task_id = id_match.group(1) if id_match else ""
+        if not task_id:
+            contract["issues"].append("checkpoint-batch 任务缺少可解析编号")
+            continue
+        if task_id in task_ids:
+            contract["issues"].append(f"任务编号重复: {task_id}")
+        task_ids.append(task_id)
+
+        for field in CHECKPOINT_TASK_FIELDS:
+            value = _task_field_value(task_block, field)
+            if _is_placeholder(value):
+                contract["issues"].append(f"任务 {task_id} 缺少字段: {field}")
+
+        depends_on = _task_field_value(task_block, "depends_on")
+        parsed_dependencies, dependency_issues = _parse_dependencies(depends_on)
+        dependencies[task_id] = parsed_dependencies
+        contract["issues"].extend(
+            f"任务 {task_id} {issue}" for issue in dependency_issues
+        )
+
+    known_ids = set(task_ids)
+    for task_id, task_dependencies in dependencies.items():
+        for dependency in sorted(task_dependencies - known_ids):
+            contract["issues"].append(
+                f"任务 {task_id} depends_on 引用了不存在的任务: {dependency}"
+            )
+
+    remaining = set(task_ids)
+    resolved = set()
+    while remaining:
+        ready = {
+            task_id for task_id in remaining
+            if dependencies.get(task_id, set()).issubset(resolved)
+        }
+        if not ready:
+            contract["issues"].append(
+                "depends_on 无法形成可拓扑排序的 DAG（存在循环依赖）"
+            )
+            break
+        resolved.update(ready)
+        remaining.difference_update(ready)
+
+    return contract
 
 
 def parse_tasks(tasks_content: str) -> dict:
@@ -57,9 +214,7 @@ def parse_tasks(tasks_content: str) -> dict:
     }
 
     # 匹配任务行: - [ ] 任务描述 或 - [√] 任务描述（支持缩进的子任务）
-    task_pattern = re.compile(r'^\s*[-*]\s*\[([ √X\-?])\]\s*(.+)$', re.MULTILINE)
-
-    for match in task_pattern.finditer(tasks_content):
+    for match in TASK_LINE_PATTERN.finditer(tasks_content):
         status_char = match.group(1)
         description = match.group(2).strip()
 
@@ -198,6 +353,13 @@ def validate_package(package_path: Path) -> dict:
         try:
             content = tasks_path.read_text(encoding="utf-8")
             result["tasks"] = parse_tasks(content)
+            checkpoint = validate_checkpoint_contract(content, result["tasks"])
+            result["tasks"]["checkpoint"] = checkpoint
+            for issue in checkpoint["issues"]:
+                result["issues"].append(f"checkpoint-batch: {issue}")
+            if checkpoint["issues"]:
+                result["valid"] = False
+                result["executable"] = False
 
             # 检查任务数量（overview 类型除外）
             if result["tasks"]["total"] == 0 and not is_overview:

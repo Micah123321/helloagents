@@ -16,6 +16,33 @@
 原子操作: 对话、咨询问答
 ```
 
+### checkpoint-batch 状态（可选）
+
+复杂编码任务使用 `@execution_strategy: checkpoint-batch` 时，在方案包的 `.status.json` 中可追加 `pipeline` 对象。它只记录当前批次和可恢复范围，不替代既有状态字段，也不保存完整代理输出。
+
+```yaml
+pipeline:
+  mode: checkpoint-batch
+  batch_id: B1
+  checkpoint: CP1
+  state: implementing / verifying / passed / blocked
+  task_ids: [1.1, 1.2]
+  risk_signals: []
+  verified_scope: []
+  resume_scope: []
+```
+
+字段规则:
+- `task_ids` 只能包含当前批次，`verified_scope` 只能记录已经验证的文件/任务范围；`resume_scope` 只记录中断后允许接手的未完成范围。
+- 风险信号使用 `context_near_limit`、`output_scope_large`、`agent_wait_degraded`、`package_incomplete`、`compaction_state_missing`；`package_incomplete` 在批次启动前阻断，其余风险按 develop 模块收紧批次宽度。
+- 状态快照或压缩前写回时必须保留已有 `pipeline` 对象，并继续更新既有 `completed/failed/pending/percent/current` 等字段。
+
+兼容与恢复:
+- 未使用 checkpoint-batch 的旧方案包可以没有 `pipeline`，不因此阻断原有流程。
+- 当前 checkpoint-batch 任务缺失 `pipeline` 时不得伪造恢复成功；应标记 `compaction_state_missing`，先依据 tasks.md/proposal.md 重建当前批次边界，再继续执行。
+- checkpoint 策略的运行时事实源是 tasks.md 顶部 `@` 元数据；proposal.md 仅提供设计说明，单独声明不会启用 checkpoint 路径。
+- 恢复上下文只注入当前 `batch_id`、`checkpoint`、`state`、风险信号和 `resume_scope`，禁止注入完整历史代理回传。
+
 ### 命令触发状态设置
 
 **状态变量定义:** [→ G6] 状态变量定义章节（单一事实来源，此处不重复）

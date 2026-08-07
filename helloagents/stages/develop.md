@@ -146,10 +146,27 @@ KB_SKIPPED=true → 扫描项目现有资源
 ### 步骤6: 按任务清单执行改动
 
 ```yaml
-执行策略: 严格按 tasks.md 逐项执行
+执行策略:
+  standard: 严格按 tasks.md 逐项执行，遵循下方 DAG/并行调度规则
+  checkpoint-batch: 仅用于 TASK_COMPLEXITY=complex 的编码任务；按当前 checkpoint 的 ready 任务分批执行，验证通过后才解锁下游
 代码体积控制（编程任务，CRITICAL）: 编码过程中严格遵守 G1 代码体积控制规则（预警: 文件/类 300 行、函数 40 行；强制拆分: 文件/类 400 行、函数 60 行），超过预警阈值必须评估拆分，超过强制阈值必须在完成功能后按职责拆分 [→ G1]
 领域编码自检（编程任务）: 编码与验证阶段对照 rules/coding-checklists.md 中本次变更涉及的域（安全/测试/架构/错误处理/性能）逐项自检，未涉及域整域跳过 [→ rules/coding-checklists.md]
 设计方向注入（含视觉产出的任务，CRITICAL）: 执行前读取 proposal.md "成果设计" 节，作为实现的美学锚点贯穿整个编码过程
+
+复杂编码检查点（CRITICAL）:
+  启用条件: TASK_COMPLEXITY=complex 且 tasks.md 顶部显式声明 @execution_strategy: checkpoint-batch；proposal.md 仅作设计说明，simple/moderate/lightweight 不进入此闸门
+  风险信号:
+    - context_near_limit: 主代理上下文接近可用上限
+    - output_scope_large: 当前批次范围或预期输出过大
+    - agent_wait_degraded: 子代理等待、超时或 partial handoff 已降级
+    - package_incomplete: 方案包契约、任务字段或依赖图不完整，批次启动前必须阻断
+    - compaction_state_missing: 压缩恢复所需的 pipeline 状态缺失
+  批次宽度: 无风险最多3项；一般风险（context_near_limit/output_scope_large）最多2项；可恢复强风险（agent_wait_degraded/compaction_state_missing）最多1项；package_incomplete 不进入批次宽度计算，直接阻断
+  批次构造: 依据 DAG 依赖只选择当前 ready 任务；不能把未满足 depends_on 的任务提前放入批次
+  批次屏障: 先通过方案包契约校验并锁定 task_ids 和文件范围 → 只实施当前批 → 运行当前批 batch_verify/静态检查/安全检查 → 更新 tasks.md 与 .status.json.pipeline；验证通过才允许重新计算下一批
+  失败处理: 当前批阻断性验证失败时暂停下游启动；先按调试/修复规则处理，仍失败则保留失败状态并中断委托流程
+  状态字段: pipeline.mode/batch_id/checkpoint/state/task_ids/risk_signals/verified_scope/resume_scope；旧状态字段保持不变，状态事实源为 .status.json，缺失 pipeline 不得伪造已恢复成功
+  输出边界: 每批只输出“已完成、验证、阻断项、下一批范围”短摘要，不输出文件全文、完整 diff 或完整代理回传
 
 子代理调用（按需自动编排，遵循自动编排原则 [→ G10]）:
   派发前语义过滤空范围、职责重复/重叠、强依赖、临界区和收益不足项，重新计算最终可派发任务项；工具/角色/平台/并发能力在门槛成立后作为执行前置检查，失败须记录降级证据
@@ -162,10 +179,11 @@ KB_SKIPPED=true → 扫描项目现有资源
 并行调度策略:
   有 DAG 依赖图（步骤4已解析）→ 按层级批次派发 [→ G10 DAG 依赖调度]
     第1层（无依赖任务）并行 → 全部完成后 → 第2层并行 → 以此类推
-    每层内按批次并行（每批 ≤6）
+    standard: 每层内按批次并行（每批 ≤6）
+    checkpoint-batch: 每层只派发当前 ready 批；按复杂编码检查点的风险宽度执行（≤3/≤2/≤1），批后验证通过才进入下一层或下一批
     每层、每批派发前重新过滤并计数；过滤后仅剩1个尾项时由主代理执行，不为尾项 spawn 单个子代理
     失败传播: 某任务 [X] → 所有依赖该任务的下游任务自动标记 [-]（前置失败）
-  无 DAG 依赖图 → 主代理自行判断依赖关系，无依赖任务按批次并行（每批 ≤6）；分批后仅剩1个尾项时由主代理执行
+  无 DAG 依赖图 → 主代理自行判断依赖关系；standard 每批 ≤6，checkpoint-batch 仍按风险宽度 ≤3/≤2/≤1；分批后仅剩1个尾项时由主代理执行
   职责隔离: 每个子代理的 prompt 必须明确其负责的工作范围（编程任务为函数/类/代码段，非编程任务为章节/模块/区域），禁止职责范围重叠
   复杂任务拆分: 单个大任务可拆为多个子任务分配给不同子代理，同文件不同函数允许并行
   同文件并行安全（编程任务）: 各子代理只修改各自负责的函数/类体内代码，不得修改文件级共享区域（imports/模块变量/初始化逻辑），共享区域变更由主代理在汇总阶段统一处理
@@ -208,7 +226,7 @@ KB_SKIPPED=true → 扫描项目现有资源
 **进度快照更新（CRITICAL）:**
 ```yaml
 时机: 每次状态变更后
-内容: 更新 tasks.md 状态符号 + LIVE_STATUS 区域 [→ G11] + 追加执行日志(最近5条)
+内容: 更新 tasks.md 状态符号 + .status.json（checkpoint-batch 任务包含 .status.json.pipeline）[→ G11] + 追加执行日志(最近5条)
 ```
 
 ### 步骤7: 安全与质量检查

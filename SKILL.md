@@ -19,5 +19,7 @@ R2 confirmation is the evaluation/risk gate, not a repeated execution-mode menu.
 
 On Codex, the shared count gate is necessary but not sufficient: the Codex efficiency/necessity gate must pass before spawning agents. Gate failure is a normal non-trigger, not a degradation.
 
+For complex coding tasks that explicitly declare `@execution_strategy: checkpoint-batch` in `tasks.md`, execute only DAG-ready tasks in bounded checkpoints: at most 3 tasks normally, at most 2 when `context_near_limit` or `output_scope_large` is present, and at most 1 when recoverable risks such as `agent_wait_degraded` or `compaction_state_missing` are present. `package_incomplete` blocks the batch before execution and cannot be bypassed with a single task. Verify the current batch before unlocking downstream tasks, update `tasks.md` and the optional `.status.json.pipeline`, and keep each progress response to completed scope, verification, blockers, and the next batch. Simple, moderate, and lightweight tasks keep the existing fast path.
+
 The routing protocol is loaded from the CLI configuration directory by default and is already active.
 Available commands: ~help, ~auto, ~plan, ~exec, ~init, ~ssh, ~review, ~commit, ~test, ~status, ~clean, ~rollback, ~validatekb, ~upgradekb, ~cleanplan, ~rlm

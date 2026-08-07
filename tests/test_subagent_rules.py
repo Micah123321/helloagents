@@ -441,6 +441,78 @@ class SubagentRuleTests(unittest.TestCase):
                     self.assertIn(needle, text)
                 self.assertTrue(any(marker in text for marker in boundary_markers))
 
+    def test_checkpoint_batch_rules_propagate_to_runtime_entries(self):
+        expected = {
+            "AGENTS.md": ("复杂编码分批闸门", "context_near_limit"),
+            "helloagents/stages/develop.md": ("checkpoint-batch", "批次屏障"),
+            "helloagents/scripts/inject_context.py": (
+                "复杂编码且 execution_strategy=checkpoint-batch",
+                "compaction_state_missing",
+            ),
+            "helloagents/core/codex_config.py": (
+                "Complex coding checkpoint-batch policy",
+                ".status.json.pipeline",
+            ),
+            "SKILL.md": ("bounded checkpoints", "package_incomplete"),
+        }
+
+        for relative_path, needles in expected.items():
+            with self.subTest(path=relative_path):
+                text = read_text(relative_path)
+                for needle in needles:
+                    self.assertIn(needle, text)
+
+    def test_checkpoint_pipeline_injection_is_bounded_to_current_scope(self):
+        script = ROOT / "helloagents" / "scripts" / "inject_context.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            package = Path(temp_dir) / ".helloagents" / "plan" / "active"
+            package.mkdir(parents=True)
+            (package / "proposal.md").write_text("# active\n", encoding="utf-8")
+            (package / "tasks.md").write_text(
+                "@task_complexity: complex\n"
+                "@execution_strategy: checkpoint-batch\n"
+                "- [ ] 2.1 current\n",
+                encoding="utf-8",
+            )
+            (package / ".status.json").write_text(
+                json.dumps(
+                    {
+                        "status": "in_progress",
+                        "pipeline": {
+                            "mode": "checkpoint-batch",
+                            "batch_id": "B7",
+                            "checkpoint": "CP7",
+                            "state": "verifying",
+                            "task_ids": ["2.1"],
+                            "risk_signals": ["output_scope_large"],
+                            "verified_scope": ["helloagents/scripts/inject_context.py"],
+                            "resume_scope": ["2.2"],
+                            "agent_history": ["must not be injected"],
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            payload = json.dumps(
+                {"hookEventName": "UserPromptSubmit", "cwd": temp_dir}
+            )
+            result = subprocess.run(
+                [sys.executable, "-X", "utf8", str(script)],
+                input=payload,
+                text=True,
+                capture_output=True,
+                encoding="utf-8",
+                check=True,
+            )
+
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("batch_id: B7", context)
+        self.assertIn("checkpoint: CP7", context)
+        self.assertIn("risk_signals: output_scope_large", context)
+        self.assertIn("resume_scope: 2.2", context)
+        self.assertNotIn("agent_history", context)
+
 
 if __name__ == "__main__":
     unittest.main()
