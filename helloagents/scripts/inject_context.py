@@ -336,16 +336,16 @@ def handle_user_prompt_submit(cwd: str) -> dict:
 
     # 2. 活跃子代理状态（compaction 后恢复）
     agents_ctx = _get_active_agents_context()
+    pipeline_ctx = _get_checkpoint_pipeline_context(cwd)
 
     # 3. 阶段规则注入（优先于通用 CRITICAL 提取）
     if stage == "DEVELOP":
-    pipeline_ctx = _get_checkpoint_pipeline_context(cwd)
         ctx = DEVELOP_RULES
+        if pipeline_ctx:
+            ctx += "\n\n" + pipeline_ctx
         if agents_ctx:
             ctx += "\n\n" + agents_ctx
         return {
-        if pipeline_ctx:
-            ctx += "\n\n" + pipeline_ctx
             "hookSpecificOutput": {
                 "hookEventName": "UserPromptSubmit",
                 "additionalContext": ctx,
@@ -411,10 +411,10 @@ def handle_subagent_start(cwd: str) -> dict:
         return {}
 
     parts = []
+    pipeline_ctx = _get_checkpoint_pipeline_context(cwd)
 
     # 1. 读取 context.md（项目上下文摘要）
     context_file = ha_dir / "context.md"
-    pipeline_ctx = _get_checkpoint_pipeline_context(cwd)
     if context_file.is_file():
         try:
             ctx = context_file.read_text(encoding="utf-8").strip()
@@ -478,9 +478,6 @@ def handle_subagent_start(cwd: str) -> dict:
     }
 
 
-def main():
-    """主入口: 从 stdin 读取 hook 事件 JSON，按 hookEventName 分发处理。
-
 def _assemble_subagent_context(parts: list[str], pipeline_ctx: str) -> str:
     """Keep the current checkpoint summary visible when other context is long."""
     body = "\n\n".join(parts)
@@ -498,6 +495,10 @@ def _assemble_subagent_context(parts: list[str], pipeline_ctx: str) -> str:
         marker = "\n...(方案上下文已截断)"
         body = body[: max(0, body_limit - len(marker))] + marker
     return f"{body}{separator}{checkpoint}"
+
+
+def main():
+    """主入口: 从 stdin 读取 hook 事件 JSON，按 hookEventName 分发处理。
 
     支持事件名映射，使 Gemini/Grok 等 CLI 的事件名映射到等效的 Claude Code 事件。
     """
@@ -530,5 +531,5 @@ def _assemble_subagent_context(parts: list[str], pipeline_ctx: str) -> str:
 
 
 if __name__ == "__main__":
-    main()
     _setup_windows_encoding()
+    main()
