@@ -87,6 +87,8 @@
 
 Codex adds an efficiency/necessity gate: default to the main agent or parallel tools, and spawn only when parallelism clearly improves efficiency, complex multi-proposal brainstorming or core/security review requires it, or the user explicitly requests parallel agents. Gate failure is a normal non-trigger and must not be marked as degradation; unavailable tools or an actual spawn failure still require evidence-based degradation handling.
 
+Sub-agent reasoning effort is selected at invocation time: trivial tasks use `low`, simple tasks use `medium` (`middle` is an input alias only), ordinary tasks use `high`, and complex tasks use `xhigh`. `max` is allowed only when `TASK_COMPLEXITY=complex` and at least two escalation signals are present, including at least one architecture, boundary, or risk signal. Effort is not hard-coded by role and does not change orchestration counts, concurrency, wait budgets, or safety gates; when the current Codex schema does not support the target, omit it or use the highest supported value that does not exceed the target and record the fallback.
+
 **Your gain:** complex tasks are broken down and handled by the right specialist, with parallel execution when possible.
 </td>
 <td width="50%" valign="top">
@@ -299,12 +301,13 @@ The npm package follows the npm release channel and may not install this reposit
 > - `agent_max_threads` too low — default 6, lower values limit parallel sub-agent scheduling (CSV batch mode recommends ≥16)
 > - `spawn_agent` availability is determined by current Codex tool discovery and the Collab environment; when the initial tool list does not show it, HelloAGENTS discovers tools before treating it as unavailable
 > - Compatibility boundary: named Codex agents should use `spawn_agent(agent_type="...", prompt="...")`, with `prompt` self-contained with the target, context, and delivery requirements; do not combine `agent_type` with `fork_context=true` by default, because `fork_context` is an invocation-time parameter, not a TOML role-config key. This avoids an initial incompatible spawn failure followed by a retry
+> - Reasoning effort: pass `reasoning_effort` at invocation time using `low|medium|high|xhigh|max`; normalize the input alias `middle` to `medium`, and do not hard-code effort in role configuration
 > - `[features]` `enable_fanout = true` — must be enabled for CSV batch orchestration (spawn_agents_on_csv)
 > - Collab sub-agent scheduling requires Codex CLI feature gate to be enabled
 >
 > 💡 **Best practices:**
 > - Codex 0.110+ recommended for full feature set (enable_fanout, nickname_candidates)
-> - HelloAGENTS is optimized for Codex CLI — supports `high` and below reasoning effort levels. `xhigh` reasoning is **not supported** and may cause instruction-following issues
+> - Reasoning effort is task-driven: `low` for trivial, `medium` for simple, `high` for ordinary, `xhigh` for complex, and `max` only for exceptional complex tasks; unsupported schema values are omitted or downgraded without exceeding the requested target
 > - Use the terminal/CLI version of Codex for the best experience. The VSCode extension updates lag behind the CLI — newer features (e.g., CSV batch orchestration, Collab multi-agent) may require waiting for the extension to catch up
 
 ### Claude Code example

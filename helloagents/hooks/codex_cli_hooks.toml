@@ -40,11 +40,13 @@ notify = ["helloagents --check-update --silent"]
 # 不设 model = 继承顶层（主代理）model。
 # 只有当某角色确实需要降级（如 explorer/monitor 用轻量模型省成本）时，才在对应
 # [agents.xxx] 节显式设 model。下面注释掉的 model 行仅为"如需降级时"的参考，非默认建议。
+# reasoning_effort 不按角色静态配置：由每次 spawn_agent/CSV 调用按任务选择。
+# 规范值为 low/medium/high/xhigh/max；入口别名 middle 必须先规范化为 medium。
+# 不支持该字段的 schema 直接省略并记录 fallback；不要把 model_reasoning_effort 写入角色节。
 #
 # [agents.explorer]
 # description = "Codebase exploration and dependency analysis"
 # # model = "<轻量模型名>"          # 可选: explorer 可降级；不写则继承主代理
-# # model_reasoning_effort = "medium"
 # nickname_candidates = ["Scout", "Pathfinder", "Tracker"]
 
 # [agents.worker]
@@ -71,5 +73,4 @@ notify = ["helloagents --check-update --silent"]
 # [agents.monitor]
 # description = "Long-running monitoring and polling tasks"
 # # model = "<轻量模型名>"          # 可选: monitor 可降级；不写则继承主代理
-# # model_reasoning_effort = "low"
 # nickname_candidates = ["Watcher", "Radar", "Lookout"]

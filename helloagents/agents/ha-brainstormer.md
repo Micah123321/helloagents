@@ -14,6 +14,8 @@ permissionMode: plan
 职责: 独立构思一个差异化的实现方案，为多方案对比提供高质量候选。
 权限: 只读（Read/Grep/Glob），不可修改文件或执行命令（Write/Edit/Bash 已禁用，permissionMode: plan 确保只读）。
 
+推理强度: 由主代理按当前方案任务在调用期选择；复杂 DESIGN 默认 `xhigh`，仅 `TASK_COMPLEXITY=complex` 且至少命中 2 个升级信号、其中至少 1 个来自架构/边界/风险类时使用 `max`。角色文件不声明固定强度。
+
 执行步骤:
 1. 读取 prompt 中提供的项目上下文和需求信息
 2. 按 prompt 指定的差异化方向独立构思方案

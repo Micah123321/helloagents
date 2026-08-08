@@ -107,6 +107,8 @@ TASK_COMPLEXITY 来源:
   KB_SKIPPED=true: 步骤5从项目扫描获取上下文，步骤10标记跳过
   步骤11 CHANGELOG 始终执行
   TASK_COMPLEXITY: 影响步骤7 reviewer 调度强度 + 步骤8验证范围（静态分析/构建/E2E） + 步骤9验收层级（功能/需求/体验）；子代理编排由实际独立工作单元数驱动（自动编排原则）
+  reasoning_effort: 在每次子代理调用前独立计算；trivial→low、simple→medium、moderate/ordinary→high、complex→xhigh；仅 TASK_COMPLEXITY=complex 且至少命中2个升级信号、其中至少1个来自架构/边界/风险类时才能→max；用户 middle 先规范化为 medium
+  Codex 兼容: schema 不支持目标参数时省略或选择不高于目标的最高支持值，记录 requested/applied/fallback；参数错误只无参重试一次，不改变原有编排门槛和安全规则
 ```
 
 ### 步骤3: 检查方案包类型（CRITICAL）
@@ -171,7 +173,7 @@ KB_SKIPPED=true → 扫描项目现有资源
 子代理调用（按需自动编排，遵循自动编排原则 [→ G10]）:
   派发前语义过滤空范围、职责重复/重叠、强依赖、临界区和收益不足项，重新计算最终可派发任务项；工具/角色/平台/并发能力在门槛成立后作为执行前置检查，失败须记录降级证据
   最终可派发任务项≥2 → 按编排五步法调度子代理并行执行任务改动 [→ G10 调用通道]
-    每个任务项单独调用一次，prompt 包含: 任务描述 + 目标文件 + 约束条件 + 设计方向摘要（含视觉产出时从 proposal.md "成果设计" 节提取：美学基调+配色+字体+氛围）+ 前端文案净化约束（前端/UI 任务时追加：组件属性中禁止写入功能说明或产品描述，仅用简洁 UI 标签）+ 动态等待预算输入与返回格式 + "直接执行，跳过路由评分"
+    每个任务项单独调用一次，prompt 包含: 任务描述 + 目标文件 + 约束条件 + 设计方向摘要（含视觉产出时从 proposal.md "成果设计" 节提取：美学基调+配色+字体+氛围）+ 前端文案净化约束（前端/UI 任务时追加：组件属性中禁止写入功能说明或产品描述，仅用简洁 UI 标签）+ 动态等待预算输入与返回格式 + 按任务映射得到的 reasoning_effort（Codex 仅在 schema 支持时传入）+ "直接执行，跳过路由评分"
     返回格式要求: {status, changes, issues, verification} [→ G10 标准返回格式]
     接收结果后: 校验 changes.scope 与 prompt 指定范围一致 → 更新任务状态
   最终可派发任务项<2 → 主代理直接执行，不 spawn 单个子代理、不标记 [降级执行]
@@ -194,6 +196,7 @@ KB_SKIPPED=true → 扫描项目现有资源
     主代理从 tasks.md 提取同构任务 → 生成 CSV（列: task_id, file_path, scope, description）→ 构造指令模板 → 调用 spawn_agents_on_csv
     并发上限 {CSV_BATCH_MAX}（默认 16），进度通过 agent_job_progress 事件实时追踪（pending/running/completed/partial/failed/ETA）
     预算边界: CSV 调用只能传入一个 max_runtime_seconds；按同构批次最大复杂度计算统一预算。任务复杂度不同或需要逐 worker 独立 handoff 时退回 spawn_agent
+    推理强度: 同构批次使用一个 reasoning_effort；异构强度先按值分组/拆批，除非 schema 明确支持逐行参数，不得混用；Codex schema 不支持时省略并记录 fallback
     完成后读取 output CSV 汇总结果，更新各任务状态
     不适用时（异构任务/任务数<6）: 保留 spawn_agent 方式
 

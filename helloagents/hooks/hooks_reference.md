@@ -151,11 +151,13 @@ agents.max_depth = 1      # 嵌套深度（默认 1）
 # 节显式设 model。不设 model = 继承顶层（主代理）model。
 #
 # 下面示例默认不写 model；注释掉的 model 行仅为"如需降级时"的参考，非默认建议。
+# reasoning_effort 不按角色静态配置：由每次 spawn_agent/CSV 调用按任务选择。
+# 规范值为 low/medium/high/xhigh/max；入口别名 middle 必须先规范化为 medium。
+# schema 不支持该调用参数时直接省略并记录 fallback；不要把 model_reasoning_effort 写入角色节。
 
 [agents.explorer]
 description = "代码探索和依赖分析"
 # model = "<轻量模型名>"          # 可选: explorer 可降级到轻量模型省成本；不写则继承主代理
-# model_reasoning_effort = "medium"
 nickname_candidates = ["探索者", "Scout", "Pathfinder"]
 
 [agents.worker]
@@ -166,7 +168,6 @@ nickname_candidates = ["工匠", "Builder", "Forge"]
 [agents.monitor]
 description = "长时间运行的监控和轮询任务"
 # model = "<轻量模型名>"          # 可选: monitor 轮询任务可降级；不写则继承主代理
-# model_reasoning_effort = "low"
 nickname_candidates = ["哨兵", "Watcher", "Radar"]
 
 # HelloAGENTS RLM 角色

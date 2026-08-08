@@ -206,13 +206,14 @@ DEVELOP_RULES = """[HelloAGENTS DEVELOP 阶段执行提醒]
 3. 按任务清单逐项执行: 先过滤独立候选；最终可派发数≥2且实际成功启动数≥2后才启用自动编排（G9）
 3.1 复杂编码且 execution_strategy=checkpoint-batch 时，只执行当前 DAG ready 批；package_incomplete 在批次启动前阻断；无风险最多3项，一般风险最多2项，可恢复强风险最多1项；批后验证通过才解锁下游
 4. 子代理协议: 遇到 [→ G10] 或 [RLM:角色名] 时按 G7 加载 rules/subagent-protocols.md
-5. 每个任务完成后更新 tasks.md 状态符号（[ ]→[√]/[X]/[-]）+ .status.json；checkpoint-batch 任务同步更新 .status.json.pipeline
-6. 安全与质量检查（步骤7）
-7. 测试执行与验证（步骤8）
-8. 功能验收测试（步骤9）: 模拟最终用户首次使用场景，验证交付物可正常工作。测试通过≠用户可用
-9. 知识库同步（步骤10）: KB_SKIPPED=false 时创建 CHANGELOG.md/context.md/INDEX.md/modules/
-10. 方案包归档（步骤14）: plan/ → archive/YYYY-MM/，更新 tasks.md 最终状态
-11. 输出验收报告
+5. 调用时推理强度: trivial→low、simple→medium、moderate/ordinary→high、complex→xhigh；仅 TASK_COMPLEXITY=complex 且至少命中2个升级信号、其中至少1个来自架构/边界/风险类时才允许 max，middle 先规范化为 medium，Codex schema 不支持时省略并记录 fallback
+6. 每个任务完成后更新 tasks.md 状态符号（[ ]→[√]/[X]/[-]）+ .status.json；checkpoint-batch 任务同步更新 .status.json.pipeline
+7. 安全与质量检查（步骤7）
+8. 测试执行与验证（步骤8）
+9. 功能验收测试（步骤9）: 模拟最终用户首次使用场景，验证交付物可正常工作。测试通过≠用户可用
+10. 知识库同步（步骤10）: KB_SKIPPED=false 时创建 CHANGELOG.md/context.md/INDEX.md/modules/
+11. 方案包归档（步骤14）: plan/ → archive/YYYY-MM/，更新 tasks.md 最终状态
+12. 输出验收报告
 
 DO NOT: 跳过模块加载直接写代码 | 跳过子代理编排 | 跳过功能验收 | 跳过知识库同步 | 跳过方案包归档"""
 
@@ -222,6 +223,7 @@ DESIGN_RULES = """[HelloAGENTS DESIGN 阶段执行提醒]
 Phase1: 上下文收集 → 项目扫描 → 复杂度评估（TASK_COMPLEXITY）→ KB_SKIPPED 判定
 Phase2: 方案构思 → 方案包生成（proposal.md + tasks.md）→ validate_package.py 验收
 子代理门槛: 普通扫描/分析候选语义过滤后≥2且实际成功启动≥2才启用；complex 多方案构思计划3~6个 brainstormer，优先实际成功启动≥3并用子代理方案比较；启动不足/超时/失败或可用方案不足时记录证据后主代理降级构思/补齐后继续，禁止伪造子代理产出
+推理强度: trivial→low、simple→medium、moderate/ordinary→high、complex→xhigh；仅 TASK_COMPLEXITY=complex 且至少命中2个升级信号、其中至少1个来自架构/边界/风险类时使用 max，middle 只作为 medium 别名
 完成后: 设置 CURRENT_STAGE=DEVELOP → 按 G7 加载 develop.md → 进入开发实施
 
 DO NOT: 跳过 Phase1 直接写方案 | 跳过方案包验收 | 设计完成后直接写代码不加载 develop.md"""
@@ -233,6 +235,7 @@ GENERIC_RULES = """[HelloAGENTS 核心流程提醒]
 - G7 模块加载: 进入 DESIGN 读 stages/design.md | 进入 DEVELOP 读 stages/develop.md
 - G9 子代理: 候选过滤后可派发数≥2且实际成功启动数≥2才启用自动编排；过滤后<2不 spawn，由主代理执行
 - Codex 效率/必要性闸门: 默认主代理或并行工具；仅明显提效、复杂多方案构思、核心/安全审查或用户明确要求并行时 spawn
+- 推理强度按调用期任务映射: trivial→low、simple→medium、moderate/ordinary→high、complex→xhigh；仅 TASK_COMPLEXITY=complex 且至少命中2个升级信号、其中至少1个来自架构/边界/风险类时才用 max，middle 规范化为 medium，schema 不支持时省略并记录 fallback
 - Codex 闸门未通过属于合规未触发，不标记 [降级执行]；工具不可用或实际 spawn 失败才记录降级证据
 - G11 注意力: tasks.md 状态必须随进度更新"""
 

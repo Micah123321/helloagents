@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SPAWN_AGENT_TYPE_WITH_FORK_CONTEXT = re.compile(
     r"spawn_agent\((?=[^)]*\bagent_type\s*=)(?=[^)]*\bfork_context\s*=\s*(?:true|True))[^)]*\)"
 )
+MAX_GATE = "TASK_COMPLEXITY=complex 且至少命中2个升级信号、其中至少1个来自架构/边界/风险类"
 
 
 def read_text(relative_path: str) -> str:
@@ -119,6 +120,206 @@ class SubagentRuleTests(unittest.TestCase):
         self.assertIn("默认不传 fork_context", codex_rules)
         self.assertIn("prompt 自包含上下文", codex_rules)
         self.assertIn("首次不兼容 spawn", codex_rules)
+
+    def test_reasoning_effort_is_task_scoped_and_uses_codex_values(self):
+        expected = {
+            "AGENTS.md": ("reasoning_effort 与编排轴分离", "middle 统一为 medium"),
+            "SKILL.md": ("Sub-agent reasoning effort is selected per invocation", "middle` is only an input alias"),
+            "helloagents/rules/subagent-protocols.md": ("任务级推理强度", "exceptional"),
+            "helloagents/rules/subagent-codex.md": ("推理强度策略", "schema 未暴露该字段时省略"),
+            "helloagents/core/codex_config.py": ("Codex reasoning effort policy", "never send"),
+            "helloagents/scripts/inject_context.py": ("推理强度按调用期任务映射", "middle 规范化为 medium"),
+            "helloagents/stages/design.md": ("调用时推理强度", "exceptional"),
+            "helloagents/stages/develop.md": ("reasoning_effort:", "middle"),
+            "helloagents/functions/rlm.md": ("调用时推理强度", "middle"),
+            "helloagents/functions/review.md": ("推理强度", "TASK_COMPLEXITY=complex"),
+            "helloagents/functions/verify.md": ("reasoning_effort", "fallback"),
+            "README.md": ("子代理推理强度按任务在调用期选择", "middle"),
+            "README_EN.md": ("Sub-agent reasoning effort is selected at invocation time", "middle"),
+        }
+
+        for relative_path, needles in expected.items():
+            with self.subTest(path=relative_path):
+                text = read_text(relative_path)
+                for needle in needles:
+                    self.assertIn(needle, text)
+
+        protocols = read_text("helloagents/rules/subagent-protocols.md")
+        self.assertIn("规范值: low | medium | high | xhigh | max", protocols)
+        self.assertIn("trivial", protocols)
+        self.assertIn("simple", protocols)
+        self.assertIn("moderate", protocols)
+        self.assertIn("complex", protocols)
+        self.assertIn("至少命中 2 个升级信号", protocols)
+        self.assertIn("至少 1 个来自架构/边界/风险类", protocols)
+        self.assertRegex(
+            protocols,
+            r"complex: TASK_COMPLEXITY=complex.*→ xhigh",
+        )
+        self.assertRegex(
+            protocols,
+            r"exceptional: 任务已是 complex.*→ max",
+        )
+        self.assertNotRegex(
+            protocols,
+            r"complex: TASK_COMPLEXITY=complex.*→ max",
+        )
+        self.assertNotIn('reasoning_effort="middle"', protocols)
+        self.assertNotIn("reasoning_effort=middle", protocols)
+
+        codex = read_text("helloagents/rules/subagent-codex.md")
+        self.assertIn("异构强度先按值分组/拆批", codex)
+        self.assertIn("不得把不同强度混入一个批次", codex)
+        self.assertIn("requested/applied/fallback", codex)
+        self.assertIn(
+            '方案构思 → spawn_agent(agent_type="brainstormer", prompt="...", reasoning_effort="<按任务映射>")',
+            codex,
+        )
+        self.assertNotRegex(
+            codex,
+            r"reasoning_effort\s*=\s*[\"']middle[\"']",
+        )
+
+    def test_role_configuration_does_not_fix_reasoning_effort(self):
+        paths = (
+            "helloagents/hooks/codex_cli_hooks.toml",
+            "helloagents/hooks/hooks_reference.md",
+            "helloagents/rlm/roles/brainstormer.md",
+            "helloagents/rlm/roles/reviewer.md",
+            "helloagents/rlm/roles/writer.md",
+        )
+
+        for relative_path in paths:
+            with self.subTest(path=relative_path):
+                text = read_text(relative_path)
+                self.assertIn("调用期", text)
+                self.assertNotRegex(text, r"(?m)^\s*#?\s*model_reasoning_effort\s*=")
+
+        for relative_path in (
+            "helloagents/agents/ha-brainstormer.md",
+            "helloagents/agents/ha-reviewer.md",
+            "helloagents/agents/ha-writer.md",
+        ):
+            with self.subTest(path=relative_path):
+                text = read_text(relative_path)
+                self.assertIn("调用期", text)
+                self.assertIn("TASK_COMPLEXITY=complex", text)
+                self.assertIn("至少命中 2 个升级信号", text)
+                self.assertIn("至少 1 个来自架构/边界/风险类", text)
+
+    def test_policy_surfaces_reject_static_or_illegal_effort_assignments(self):
+        policy_files = (
+            "AGENTS.md",
+            "SKILL.md",
+            "README.md",
+            "README_EN.md",
+            "helloagents/stages/design.md",
+            "helloagents/stages/develop.md",
+            "helloagents/functions/rlm.md",
+            "helloagents/functions/review.md",
+            "helloagents/functions/verify.md",
+            "helloagents/agents/ha-brainstormer.md",
+            "helloagents/agents/ha-reviewer.md",
+            "helloagents/agents/ha-writer.md",
+            "helloagents/rlm/roles/brainstormer.md",
+            "helloagents/rlm/roles/reviewer.md",
+            "helloagents/rlm/roles/writer.md",
+            "helloagents/hooks/codex_cli_hooks.toml",
+            "helloagents/hooks/hooks_reference.md",
+        )
+
+        for relative_path in policy_files:
+            with self.subTest(path=relative_path):
+                text = read_text(relative_path)
+                self.assertNotRegex(
+                    text,
+                    r"(?m)^\s*#?\s*(?:model_)?reasoning_effort\s*=\s*[\"'](?:middle|max)[\"']",
+                )
+
+    def test_injected_context_preserves_complete_max_gate(self):
+        script = ROOT / "helloagents" / "scripts" / "inject_context.py"
+
+        def run_hook(cwd):
+            payload = json.dumps(
+                {"hookEventName": "UserPromptSubmit", "cwd": str(cwd)}
+            )
+            result = subprocess.run(
+                [sys.executable, "-X", "utf8", str(script)],
+                input=payload,
+                text=True,
+                capture_output=True,
+                encoding="utf-8",
+                check=True,
+            )
+            return json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            package = Path(temp_dir) / ".helloagents" / "plan" / "active"
+            package.mkdir(parents=True)
+            (package / "proposal.md").write_text("# active", encoding="utf-8")
+
+            design_text = run_hook(temp_dir)
+            self.assertIn(MAX_GATE, design_text)
+            self.assertNotIn("exceptional complex 才允许 max", design_text)
+
+            (package / "tasks.md").write_text(
+                "@execution_strategy: standard\n- [ ] task\n",
+                encoding="utf-8",
+            )
+            develop_text = run_hook(temp_dir)
+            self.assertIn(MAX_GATE, develop_text)
+            self.assertNotIn("exceptional complex 才允许 max", develop_text)
+
+            generic_root = Path(temp_dir) / "generic"
+            generic_root.mkdir()
+            (generic_root / "AGENTS.md").write_text("# Rules\n", encoding="utf-8")
+            generic_text = run_hook(generic_root)
+            self.assertIn(MAX_GATE, generic_text)
+
+    def test_embedded_runtime_prompts_propagate_reasoning_effort_policy(self):
+        inject_context = read_text("helloagents/scripts/inject_context.py")
+        self.assertIn("trivial→low", inject_context)
+        self.assertIn("simple→medium", inject_context)
+        self.assertIn("moderate/ordinary→high", inject_context)
+        self.assertIn("complex→xhigh", inject_context)
+        self.assertIn(MAX_GATE, inject_context)
+        self.assertIn("schema 不支持时省略并记录 fallback", inject_context)
+
+    def test_embedded_runtime_prompt_injects_effort_policy_by_stage(self):
+        script = ROOT / "helloagents" / "scripts" / "inject_context.py"
+
+        def run_hook(cwd):
+            payload = json.dumps(
+                {"hookEventName": "UserPromptSubmit", "cwd": str(cwd)}
+            )
+            result = subprocess.run(
+                [sys.executable, "-X", "utf8", str(script)],
+                input=payload,
+                text=True,
+                capture_output=True,
+                encoding="utf-8",
+                check=True,
+            )
+            return json.loads(result.stdout)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            package = Path(temp_dir) / ".helloagents" / "plan" / "active"
+            package.mkdir(parents=True)
+
+            (package / "proposal.md").write_text("# active", encoding="utf-8")
+            design_context = run_hook(temp_dir)
+            design_text = design_context["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("推理强度", design_text)
+            self.assertIn("complex→xhigh", design_text)
+
+            (package / "tasks.md").write_text(
+                "@execution_strategy: standard\n- [ ] task\n",
+                encoding="utf-8",
+            )
+            develop_context = run_hook(temp_dir)
+            develop_text = develop_context["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("调用时推理强度", develop_text)
+            self.assertIn("middle 先规范化为 medium", develop_text)
 
     def test_codex_agent_type_examples_do_not_combine_fork_context_true(self):
         paths = [

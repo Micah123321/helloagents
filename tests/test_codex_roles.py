@@ -4,6 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10 compatibility
+    tomllib = None
+
 from helloagents.core.codex_roles import (
     _configure_codex_agent_roles,
     _remove_codex_agent_roles,
@@ -22,6 +27,8 @@ class CodexRoleTests(unittest.TestCase):
             self.assertIn('config_file = "agents/helloagents-readonly-reviewer.toml"', config)
             self.assertIn('[agents.brainstormer]', config)
             self.assertIn('config_file = "agents/helloagents-readonly-brainstormer.toml"', config)
+            self.assertNotIn("reasoning_effort", config)
+            self.assertNotIn("model_reasoning_effort", config)
 
             worker_section = config.split("[agents.worker]", 1)[1].split("[agents.monitor]", 1)[0]
             self.assertNotIn("config_file", worker_section)
@@ -31,6 +38,9 @@ class CodexRoleTests(unittest.TestCase):
             content = role_config.read_text(encoding="utf-8")
             self.assertIn('sandbox_mode = "read-only"', content)
             self.assertIn("Do not create, edit, move, rename, or delete files.", content)
+            if tomllib is not None:
+                parsed = tomllib.loads(content)
+                self.assertEqual(parsed["sandbox_mode"], "read-only")
 
     def test_configure_does_not_write_fork_context_to_codex_role_configs(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -47,6 +57,9 @@ class CodexRoleTests(unittest.TestCase):
                 with self.subTest(path=role_config.name):
                     content = role_config.read_text(encoding="utf-8")
                     self.assertNotIn("fork_context", content)
+                    self.assertNotIn("reasoning_effort", content)
+                    if tomllib is not None:
+                        tomllib.loads(content)
 
     def test_configure_updates_existing_role_and_preserves_user_keys(self):
         with tempfile.TemporaryDirectory() as tmp:

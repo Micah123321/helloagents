@@ -36,12 +36,26 @@
     实现/审查/构思类角色（worker/reviewer/brainstormer）通常需要主力模型能力，不建议降级
   保留用户配置: codex_roles.py 更新角色节时保留用户已添加的 model 键（preserving user-added keys），不覆盖用户显式选择
 
+推理强度策略（CRITICAL）:
+  调用期选择: reasoning_effort 按当前任务选择，不写入 [agents.{role}] 或角色 config_file 作为固定默认值；角色相同不代表任务强度相同
+  规范值: low | medium | high | xhigh | max；用户别名 middle 只在入口规范化为 medium，实际调用不得传 middle
+  默认映射: trivial→low | simple→medium | moderate/ordinary→high | complex→xhigh | exceptional→max
+  max 闸门: 仅在 TASK_COMPLEXITY=complex 且至少 2 个升级信号同时成立、其中至少 1 个是架构/边界/风险信号时使用
+  spawn_agent: schema 支持且目标值合法时传 reasoning_effort="<规范值>"；schema 未暴露该字段时省略，不传 null 或猜测字段名
+  能力降级: 目标值不受支持时只选择不高于目标值的最高支持值；没有合适值则省略，并记录 requested/applied/fallback
+  参数错误: 首次因 reasoning_effort 参数/schema 失败时，使用相同 agent_type 和自包含 prompt 重试一次但省略该参数；不要重复传入非法值
+  宿主边界: HelloAGENTS 当前没有 spawn_agent/CSV 调用包装器；以上字段由主代理按宿主 schema 传递，宿主最终 payload 由 Codex 工具负责接受或拒绝
+  记录落点: 主代理在 tasks.md 执行日志或验收报告记录 requested/applied/fallback；规则传播不等于宿主级硬校验
+  边界保持: 强度选择不改变自动编排数量门槛、Codex 效率/必要性闸门、EHRB、等待预算、partial handoff 或 close 规则
+
+调用契约示例边界: 下方 `spawn_agent`/CSV 示例是父代理调用时的参数契约，不是仓库内可执行的适配器；调用前先检查宿主 schema，目标值不支持时按上方规则记录 fallback，不能把省略参数报告为已应用目标强度
+
 原生子代理:
-  代码探索/依赖分析 → spawn_agent(agent_type="explorer", prompt="...")
-  代码实现 → spawn_agent(agent_type="worker", prompt="...")
-  测试运行 → spawn_agent(agent_type="worker", prompt="...")
-  方案构思 → spawn_agent(agent_type="brainstormer", prompt="...")  # DESIGN 步骤10，RLM 角色
-  监控轮询 → spawn_agent(agent_type="monitor", prompt="...")  # 长时间运行的轮询任务
+  代码探索/依赖分析 → spawn_agent(agent_type="explorer", prompt="...", reasoning_effort="<按任务映射>")
+  代码实现 → spawn_agent(agent_type="worker", prompt="...", reasoning_effort="<按任务映射>")
+  测试运行 → spawn_agent(agent_type="worker", prompt="...", reasoning_effort="<按任务映射>")
+  方案构思 → spawn_agent(agent_type="brainstormer", prompt="...", reasoning_effort="<按任务映射>")  # 复杂 DESIGN 默认 xhigh；exceptional 才升 max
+  监控轮询 → spawn_agent(agent_type="monitor", prompt="...", reasoning_effort="<按任务映射>")  # 长时间运行的轮询任务
 
 上下文传递策略（fork_context 兼容边界）:
   默认策略: 命名 Codex agent 调用使用 spawn_agent(agent_type="...", prompt="...")，默认不传 fork_context。
@@ -68,6 +82,8 @@ CSV 批处理编排（需 collab + sqlite 特性）:
     output_schema: 可选，worker 返回结果的 JSON Schema
     max_concurrency: 并发数（默认 {CSV_BATCH_MAX}，上限 64）
     max_runtime_seconds: 单次 CSV 调用对所有 worker 共用的运行时上限；同构批次按最大任务复杂度计算后显式传入，不把 1800s 当作工作流默认值
+    reasoning_effort: 可选，schema 支持时为整个同构批次传一个规范值；异构强度先按值分组/拆批，除非 schema 明确支持逐行参数，不得把不同强度混入一个批次
+    批次降级: schema 不支持 reasoning_effort 时省略并记录 fallback；不得把 middle 写入 CSV 或传给 API
   执行流程:
     1. 主代理生成任务 CSV（从 tasks.md 提取同构任务行）
     2. 调用 spawn_agents_on_csv，使用该同构批次的统一预算，直到每个 worker 进入 completed/partial/failed/回收之一
@@ -89,7 +105,7 @@ helloagents 角色:
     1. 加载角色预设: 读取 rlm/roles/{角色}.md
     2. 构造 prompt: "[跳过指令] {从角色预设提取的约束} + {具体任务描述}"
        Codex RLM 角色调用默认不传 fork_context；角色 prompt 必须自包含必要上下文
-    3. 调用 spawn_agent: agent_type="{角色名}", prompt=上述内容
+    3. 调用 spawn_agent: agent_type="{角色名}", prompt=上述内容, reasoning_effort="{按任务映射}"
     4. 接收结果: 解析子代理返回的结构化结果
     5. 记录调用: 在 tasks.md 记录调用结果
 

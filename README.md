@@ -89,6 +89,8 @@
 
 Codex 额外应用“效率/必要性闸门”：默认由主代理或同一消息内的并行工具完成，只有并行能明显提升效率、复杂多方案构思、核心/安全审查或用户明确要求并行时才 spawn。闸门未通过属于合规未触发，不标记“降级执行”；工具不可用或实际 spawn 失败才按编排失败记录证据。
 
+子代理推理强度按任务在调用期选择：极简单任务 `low`、简单任务 `medium`（`middle` 仅为输入别名）、普通任务 `high`、复杂任务 `xhigh`；只有 `TASK_COMPLEXITY=complex` 且至少命中两个升级信号、其中至少一个来自架构/边界/风险类时才使用 `max`。强度不按角色静态配置，也不改变编排数量、并发、等待预算或安全闸门；当前 Codex schema 不支持目标参数时省略或选择不高于目标的最高支持值并记录降级。
+
 **实际效果：** 复杂任务会拆成可执行的小任务，能并行时并行处理。
 </td>
 <td width="50%" valign="top">
@@ -177,6 +179,7 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
 - 启用 `enable_fanout` 以使用 CSV 批量编排（v0.110+）
 - 配置 `nickname_candidates` 以实现角色识别
 - 兼容边界：命名 Codex agent 调用应使用 `spawn_agent(agent_type="...", prompt="...")`，并让 `prompt` 自包含必要上下文；默认不要组合 `agent_type` 与 `fork_context=true`，`fork_context` 是调用期参数，不是 TOML role config 项
+- 推理强度：`reasoning_effort` 是调用期参数，规范值为 `low|medium|high|xhigh|max`；`middle` 先规范化为 `medium`，不要写入角色配置
 - 等待与接管：每个子代理按任务复杂度动态计算独立等待预算；达到预算后先请求结构化 `partial handoff`，关闭原代理后由主代理只接手未完成范围，不重复执行已确认结果
 - 为只读子代理角色配置 read-only role config；Codex CLI 当前不提供 PreToolUse 危险命令拦截
 - 如使用并行工作流，配置 CSV 批量处理
@@ -315,7 +318,7 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
 >
 > **建议配置：**
 > - 使用 Codex 0.110+，以启用 enable_fanout 和 nickname_candidates
-> - HelloAGENTS 支持 `high` 及以下推理程度；不要使用 `xhigh`，否则可能影响规则跟随
+> - 推理强度按任务选择：简单任务使用 `medium`，普通任务 `high`，复杂任务 `xhigh`，`max` 仅用于满足 exceptional 门槛的复杂任务；若当前 schema 不支持目标值则省略或向下兼容
 > - 优先使用终端版 Codex。VSCode 插件通常晚于 CLI 发布，部分功能可能暂不可用
 
 ### Claude Code 示例

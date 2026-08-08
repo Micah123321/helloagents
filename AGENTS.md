@@ -1114,6 +1114,17 @@ Scope: This rule applies to ALL ⛔ END_TURN marks in ALL modules, no exceptions
 结果: TASK_COMPLEXITY = simple | moderate | complex
 ```
 
+### 调用时推理强度
+
+```yaml
+reasoning_effort 与编排轴分离: 前者是每次 spawn_agent/CSV/RLM 调用的运行时参数，可以读取 TASK_COMPLEXITY 选择映射，但不改变编排门槛、并发或安全规则
+规范值: low | medium | high | xhigh | max；用户别名 middle 统一为 medium，实际调用禁止传 middle
+映射: trivial→low | simple→medium | moderate/ordinary→high | complex→xhigh | exceptional→max
+max 限制: 仅 complex 且至少 2 个升级信号同时成立、至少 1 个为架构/边界/风险信号时允许；单一规模指标不能触发
+兼容: 调用 schema 不支持该参数或目标值时省略/选择不高于目标的最高支持值，并记录 requested/applied/fallback；参数错误仅无参重试一次
+边界: 强度不改变子代理数量门槛、Codex 效率/必要性闸门、并发、等待预算、handoff、EHRB 或其他 CLI 的原生调用协议
+```
+
 ### 调用协议
 
 ```yaml

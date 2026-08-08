@@ -83,6 +83,8 @@ RLM（Role-based Language Model）— 子代理编排与多终端协作。
 
 并行 spawn 语法: ~rlm spawn reviewer,writer "任务描述" — 逗号分隔多角色，并行调度
 
+调用时推理强度: reviewer/writer/brainstormer 不按角色固定强度；按 `rules/subagent-protocols.md` 任务级映射选择 `low|medium|high|xhigh|max`。`middle` 只归一化为 `medium`，Codex schema 不支持 `reasoning_effort` 时省略并记录 fallback；该参数不改变角色权限、并发门槛或 EHRB。
+
 输出: 完成（角色+任务+结果状态+关键发现+变更+建议）
 ```
 

@@ -14,6 +14,8 @@ tools: Read, Write, Edit, Grep, Glob
 权限: 读写（Read/Write/Edit/Grep/Glob），可创建和编辑文档文件。
 调用方式: 仅限用户通过 ~rlm spawn writer 显式启动，系统流程不自动调用。
 
+推理强度: 由主代理按本次文档任务在调用期选择；普通任务默认 `high`，复杂跨模块文档可使用 `xhigh`；仅 `TASK_COMPLEXITY=complex` 且至少命中 2 个升级信号、其中至少 1 个来自架构/边界/风险类时使用 `max`，不在角色文件中固定强度。
+
 执行步骤:
 1. 读取 prompt 中的文档需求
 2. 调研相关项目上下文

@@ -58,6 +58,31 @@ CLI 一致性（CRITICAL）:
   不得因某 CLI 有失败兜底机制就在编排前默认走主代理直接执行。
 ```
 
+### 任务级推理强度（REASONING_EFFORT）
+
+```yaml
+定位: reasoning_effort 是每次子代理调用的运行时参数；它可以读取 TASK_COMPLEXITY 选择映射，但与子代理编排门槛、并发数、等待预算和 EHRB 相互独立
+规范值: low | medium | high | xhigh | max
+输入别名: 用户或上层策略写 middle 时，统一规范化为 medium；任何实际调用不得传入 middle
+选择顺序（trivial 优先于 TASK_COMPLEXITY 标签）:
+  trivial: 已知位置/命令/模式的单点任务，通常 ≤1 个文件或工作单元，且无设计、边界或安全风险 → low
+  simple: TASK_COMPLEXITY=simple 且不满足 trivial → medium
+  moderate: TASK_COMPLEXITY=moderate 且不满足 trivial，或证据不足以安全降级 → high
+  ordinary: 普通默认任务 → high
+  complex: TASK_COMPLEXITY=complex 且不满足 trivial，但没有 exceptional 信号 → xhigh
+  exceptional: 任务已是 complex，且至少命中 2 个升级信号，其中至少 1 个来自架构/边界/风险类 → max
+exceptional 信号:
+  架构边界: 架构不确定、外部 API/CLI 契约、多服务同步、数据库 schema/迁移、跨三层边界
+  风险边界: 权限/认证、PII/密钥、数据恢复、不可逆状态、EHRB 或生产边界
+  规模依赖: dependency_depth≥3、文件数>20、模块数>5、任务数>12、角色交接≥3
+约束:
+  - 单一文件数、任务数或“看起来复杂”不能单独触发 max
+  - reasoning_effort 只影响模型推理投入，不改变是否 spawn、spawn 数量、并发、预算、handoff 或安全闸门
+  - 非 Codex CLI 使用其原生等价参数；没有等价参数时省略，不把 Codex 参数硬塞给其他 CLI
+  - 宿主边界: 本仓库不拥有 Codex spawn_agent/CSV 的调用包装层；主代理负责在宿主 schema 支持时传参，宿主最终 payload 不能由规则文件硬校验
+  - 记录落点: 主代理将 requested/applied/fallback 写入 tasks.md 执行日志或验收报告；未传参数的宿主能力限制不得伪装成参数成功
+```
+
 ### 通用子代理触发场景总表（单一事实源）
 
 > 本表是各阶段/命令编排触发的唯一判定基准。各阶段文件（design/develop）、各命令文件（review/verify/commit/test/init/wiki/validatekb）、

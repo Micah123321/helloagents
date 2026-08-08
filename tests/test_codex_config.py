@@ -1,8 +1,14 @@
 """Tests for Codex config helpers."""
 
+import re
 import tempfile
 import unittest
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10 compatibility
+    tomllib = None
 
 from helloagents.core.codex_config import (
     _CODEX_DEVELOPER_INSTRUCTIONS,
@@ -46,6 +52,15 @@ class CodexConfigTests(unittest.TestCase):
         self.assertIn("search/discover sub-agent tools first", text)
         self.assertIn("spawn_agent or spawn_agents_on_csv", text)
         self.assert_codex_spawn_compatibility_guidance(text)
+        self.assertIn("Codex reasoning effort policy", text)
+        for value in ("low", "medium", "high", "xhigh", "max"):
+            with self.subTest(value=value):
+                self.assertIn(value, text)
+        self.assertIn('"middle" to "medium"', text)
+        self.assertIn("CSV batches", text)
+        self.assertIn("omit it and record", text)
+        self.assertIn("does not own a spawn_agent or CSV wrapper", text)
+        self.assertIn("tasks.md execution logs or the acceptance report", text)
 
     def test_configure_writes_subagent_authorization_to_config(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -59,6 +74,15 @@ class CodexConfigTests(unittest.TestCase):
             self.assertIn("explicit standing request", config)
             self.assertIn("search/discover sub-agent tools first", config)
             self.assert_codex_spawn_compatibility_guidance(config)
+            self.assertIn("Codex reasoning effort policy", config)
+            self.assertIn('"middle" to "medium"', config)
+            self.assertNotRegex(
+                config,
+                re.compile(r"reasoning_effort\s*=\s*[\"']middle[\"']"),
+            )
+            if tomllib is not None:
+                parsed = tomllib.loads(config)
+                self.assertIn("developer_instructions", parsed)
 
 
 if __name__ == "__main__":
