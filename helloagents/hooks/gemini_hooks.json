@@ -48,15 +48,15 @@
         ]
       }
     ],
-    "PreToolUse": [
+    "BeforeTool": [
       {
-        "matcher": "Bash",
+        "matcher": "run_shell_command",
         "hooks": [
           {
             "type": "command",
             "command": "python3 \"{SCRIPTS_DIR}/pre_tool_guard.py\"",
             "timeout": 3,
-            "description": "HelloAGENTS 危险命令安全防护（PreToolUse → Claude Code PreToolUse 等效）"
+            "description": "HelloAGENTS 危险命令安全防护"
           }
         ]
       }

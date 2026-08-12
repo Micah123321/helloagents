@@ -19,9 +19,9 @@ from pathlib import Path
 from typing import List, Optional
 
 try:
-    from .runbook_parser import load_runbook_yaml
+    from .runbook_parser import load_runbook_yaml, parse_validation_command
 except ImportError:
-    from runbook_parser import load_runbook_yaml
+    from runbook_parser import load_runbook_yaml, parse_validation_command
 
 
 CMD_TIMEOUT = 60
@@ -118,12 +118,14 @@ def run_verification(commands: List[str], cwd: str) -> tuple:
     """依次执行验证命令，返回 `(all_passed, failures)`。"""
     failures = []
     for cmd in commands:
+        argv = parse_validation_command(cmd)
+        if argv is None:
+            failures.append({"cmd": cmd, "output": "命令不在本地验证允许列表中"})
+            continue
         try:
-            # Security note: shell=True is intentional here. Commands come from
-            # project-local config files, not from untrusted external input.
             result = subprocess.run(
-                cmd,
-                shell=True,
+                argv,
+                shell=False,
                 cwd=cwd,
                 capture_output=True,
                 timeout=CMD_TIMEOUT,

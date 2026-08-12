@@ -234,11 +234,11 @@ BeforeAgent — 上下文注入:
   动作: inject_context.py，通过事件名映射注入规则强化上下文
   超时: 3s
 
-PreToolUse — 危险命令安全防护（待验证）:
-  事件: PreToolUse | 匹配: Bash（等效 Claude Code PreToolUse）
+BeforeTool — 危险命令安全防护（待验证）:
+  事件: BeforeTool | 匹配: run_shell_command
   动作: pre_tool_guard.py，检测高危命令模式，匹配时返回 deny
   超时: 3s
-  注: Gemini CLI 对 PreToolUse 事件的支持待验证，部署后如不生效则依赖规则层 EHRB 降级
+  注: Gemini CLI 对 BeforeTool 非零退出阻断语义仍需真实宿主验证，部署后如不生效则依赖规则层 EHRB 降级
 
 PostToolUse — 进度快照（待验证）:
   事件: PostToolUse | 匹配: Write|Edit（等效 Claude Code PostToolUse）

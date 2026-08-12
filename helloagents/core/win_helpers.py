@@ -5,6 +5,7 @@ Leaf module: only depends on stdlib + _common._msg.
 
 import os
 import shutil
+import stat
 import sys
 from pathlib import Path
 
@@ -76,7 +77,8 @@ def _cleanup_pip_remnants() -> None:
     for sp_path in sp_paths:
         try:
             for remnant in sp_path.iterdir():
-                if not (remnant.is_dir() and remnant.name.startswith("~")):
+                if not (remnant.is_dir()
+                        and remnant.name.casefold().startswith("~elloagents")):
                     continue
                 try:
                     shutil.rmtree(remnant)
@@ -255,20 +257,55 @@ def _win_schedule_exe_cleanup(bak: Path | None = None) -> None:
 # Safe rmtree: rename-aside fallback for locked directories
 # ---------------------------------------------------------------------------
 
-def win_safe_rmtree(path: Path) -> bool:
+def _is_link_or_reparse(path: Path) -> bool:
+    """Return whether path is a symlink, junction, or other reparse point."""
+    try:
+        attrs = path.lstat().st_file_attributes
+    except (AttributeError, FileNotFoundError, OSError):
+        attrs = 0
+    return path.is_symlink() or bool(
+        attrs & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    )
+
+
+def _is_managed_tree(path: Path, managed_root: Path) -> bool:
+    """Return whether path is a non-reparse descendant of managed_root."""
+    if _is_link_or_reparse(managed_root):
+        return False
+    try:
+        root = managed_root.absolute()
+        target = path.absolute()
+        relative = target.relative_to(root)
+    except (FileNotFoundError, OSError, RuntimeError, ValueError):
+        return False
+    if not relative.parts:
+        return False
+
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if current.exists() or current.is_symlink():
+            if _is_link_or_reparse(current):
+                return False
+    return True
+
+
+def win_safe_rmtree(path: Path, managed_root: Path) -> bool:
     """Remove a directory tree, with rename-aside fallback on Windows.
 
     If shutil.rmtree fails (e.g. a CLI process holds files open),
     rename the directory to a ~name.old.PID.TIMESTAMP suffix so the original
     path is freed. Stale .old directories are cleaned up automatically.
 
-    Returns True if the path no longer exists (removed or renamed aside).
+    The target must be a non-link descendant of ``managed_root``. Returns True
+    if the path no longer exists (removed or renamed aside).
     """
+    if _is_link_or_reparse(path):
+        return False
     if not path.exists():
         return True
-
-    # First, clean up any stale .old directories from previous runs
-    _cleanup_old_dirs(path.parent, path.name)
+    if not _is_managed_tree(path, managed_root):
+        return False
 
     try:
         shutil.rmtree(path)
@@ -289,17 +326,9 @@ def win_safe_rmtree(path: Path) -> bool:
         return False
 
 
-def _cleanup_old_dirs(parent: Path, base_name: str) -> None:
-    """Clean up stale ~name.old.* directories from previous rename-aside ops."""
-    if not parent.exists():
-        return
-    prefix = f"~{base_name}.old."
-    for item in parent.iterdir():
-        if item.is_dir() and item.name.startswith(prefix):
-            try:
-                shutil.rmtree(item)
-            except OSError:
-                pass  # still locked, will be cleaned next time
+def _cleanup_old_dirs(parent: Path, base_name: str, managed_root: Path) -> None:
+    """Do not infer ownership from a rename-aside filename prefix."""
+    return
 
 
 def _win_deferred_pip(pip_args: list[str],
@@ -352,7 +381,7 @@ def _win_deferred_pip(pip_args: list[str],
         "    time.sleep(1)",
         "",
         "# Run pip command",
-        f"subprocess.run({pip_args!r}, creationflags={no_window})",
+        f"install_result = subprocess.run({pip_args!r}, creationflags={no_window})",
     ]
 
     if post_cmds:
@@ -360,7 +389,7 @@ def _win_deferred_pip(pip_args: list[str],
         script_lines.append("# Post-commands (e.g. sync CLI targets)")
         for cmd in post_cmds:
             script_lines.append(
-                f"subprocess.run({cmd!r}, creationflags={no_window})")
+                f"if install_result.returncode == 0: subprocess.run({cmd!r}, creationflags={no_window})")
 
     script_lines += [
         "",
@@ -390,7 +419,7 @@ def _win_deferred_pip(pip_args: list[str],
 # ---------------------------------------------------------------------------
 
 def build_pip_cleanup_cmd() -> list[str]:
-    """Build a command to clean up ~prefixed pip remnant directories.
+    """Build a command to clean up HelloAGENTS pip remnant directories.
 
     Returns a subprocess-ready command list that runs an inline Python script
     to remove corrupted pip remnants from site-packages.
@@ -402,5 +431,5 @@ def build_pip_cleanup_cmd() -> list[str]:
         "for d in site.getsitepackages() "
         "if pathlib.Path(d).is_dir() "
         "for p in pathlib.Path(d).iterdir() "
-        "if p.is_dir() and p.name.startswith('~')]",
+        "if p.is_dir() and p.name.lower().startswith('~elloagents')]",
     ]

@@ -16,6 +16,54 @@ class _Result:
 
 
 class UpdaterTests(unittest.TestCase):
+    COMMIT = "a" * 40
+
+    def test_git_install_url_is_pinned_to_commit(self):
+        url = up._build_git_install_url(
+            "https://github.com/Micah123321/helloagents.git",
+            self.COMMIT,
+        )
+        self.assertEqual(
+            url,
+            f"git+https://github.com/Micah123321/helloagents.git@{self.COMMIT}",
+        )
+
+    def test_update_source_rejects_credentials_and_non_https(self):
+        self.assertTrue(up._is_safe_update_source(
+            "https://github.com/Micah123321/helloagents.git"))
+        self.assertFalse(up._is_safe_update_source(
+            "git@github.com:Micah123321/helloagents.git"))
+        self.assertFalse(up._is_safe_update_source(
+            "https://token@github.com/Micah123321/helloagents.git"))
+        self.assertFalse(up._is_safe_update_source(
+            "https://github.com/attacker/helloagents.git"))
+        self.assertFalse(up._is_safe_update_source(
+            "https://github.com/Micah123321/other.git"))
+
+    def test_cancelled_update_does_not_run_cleanup(self):
+        cleanup = Mock()
+        with patch.object(up, "get_version", return_value="2.3.9+m"), \
+             patch.object(up, "_resolve_branch", return_value="dev/2.3.8"), \
+             patch.object(up, "_get_repo_url", return_value="https://github.com/Micah123321/helloagents.git"), \
+             patch.object(up, "_remote_commit_id", return_value=self.COMMIT), \
+             patch.object(up, "fetch_latest_version", return_value="2.3.9+m"), \
+             patch.object(up, "_local_commit_id", return_value=self.COMMIT), \
+             patch.object(up, "_detect_installed_targets", return_value=[]), \
+             patch.object(up, "_cleanup_pip_remnants", cleanup), \
+             patch("builtins.input", return_value="n"), \
+             patch("sys.stdout", io.StringIO()):
+            up.update()
+
+        cleanup.assert_not_called()
+
+    def test_post_update_sync_reports_target_failure(self):
+        failed = Mock(returncode=1)
+        with patch.object(up, "get_version", return_value="2.3.9"), \
+             patch.object(up, "_write_update_cache"), \
+             patch.object(up, "_detect_installed_targets", return_value=["claude"]), \
+             patch("subprocess.run", return_value=failed), \
+             patch("sys.stdout", io.StringIO()):
+            self.assertFalse(up._post_update_sync("dev/2.3.8", 3))
     def test_detects_chinese_windows_entrypoint_lock_error(self):
         text = (
             "error: Failed to install entrypoint\n"
@@ -56,7 +104,7 @@ class UpdaterTests(unittest.TestCase):
              patch.object(up, "_get_repo_url", return_value="https://github.com/Micah123321/helloagents.git"), \
              patch.object(up, "fetch_latest_version", return_value="2.3.9+m"), \
              patch.object(up, "_local_commit_id", return_value="old"), \
-             patch.object(up, "_remote_commit_id", return_value="new"), \
+             patch.object(up, "_remote_commit_id", return_value=self.COMMIT), \
              patch.object(up, "_detect_installed_targets", return_value=["codex"]), \
              patch.object(up, "_detect_install_method", return_value="uv"), \
              patch.object(up, "_cleanup_pip_remnants"), \
@@ -76,6 +124,7 @@ class UpdaterTests(unittest.TestCase):
         self.assertEqual(uv_cmd[:3], ["uv", "tool", "install"])
         self.assertIn("--force", uv_cmd)
         self.assertIn("--no-cache", uv_cmd)
+        self.assertIn(f"@{self.COMMIT}", uv_cmd[4])
         schedule.assert_called_once()
         self.assertEqual(schedule.call_args.args[0], uv_cmd)
         post_cmds = schedule.call_args.kwargs["post_cmds"]
@@ -93,7 +142,7 @@ class UpdaterTests(unittest.TestCase):
              patch.object(up, "_get_repo_url", return_value="https://github.com/Micah123321/helloagents.git"), \
              patch.object(up, "fetch_latest_version", return_value="2.3.9+m"), \
              patch.object(up, "_local_commit_id", return_value="old"), \
-             patch.object(up, "_remote_commit_id", return_value="new"), \
+             patch.object(up, "_remote_commit_id", return_value=self.COMMIT), \
              patch.object(up, "_detect_installed_targets", return_value=[]), \
              patch.object(up, "_detect_install_method", return_value="uv"), \
              patch.object(up, "_cleanup_pip_remnants"), \
@@ -110,6 +159,19 @@ class UpdaterTests(unittest.TestCase):
         uv_calls = [call.args[0] for call in run.call_args_list if call.args[0][:3] == ["uv", "tool", "install"]]
         self.assertEqual(len(uv_calls), 1)
         schedule.assert_not_called()
+
+    def test_invalid_remote_commit_aborts_before_install(self):
+        run = Mock()
+        with patch.object(up, "get_version", return_value="2.3.9+m"), \
+             patch.object(up, "_resolve_branch", return_value="dev/2.3.8"), \
+             patch.object(up, "_get_repo_url", return_value="https://github.com/Micah123321/helloagents.git"), \
+             patch.object(up, "_remote_commit_id", return_value="not-a-commit"), \
+             patch.object(up, "_cleanup_pip_remnants"), \
+             patch.object(up, "_detect_installed_targets", return_value=[]), \
+             patch("subprocess.run", run):
+            up.update()
+
+        run.assert_not_called()
 
 
 if __name__ == "__main__":

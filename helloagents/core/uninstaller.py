@@ -7,9 +7,10 @@ from pathlib import Path
 
 from .._common import (
     _msg,
-    CLI_TARGETS, PLUGIN_DIR_NAME, HELLOAGENTS_MARKER, AGENT_PREFIX,
+    CLI_TARGETS, PLUGIN_DIR_NAME, HELLOAGENTS_MARKER,
     is_helloagents_file, clean_skills_dir, cleanup_empty_parent,
     _detect_installed_targets, _detect_install_method,
+    get_helloagents_module_path,
 )
 from .codex_config import _cleanup_codex_agents_dotted, _remove_codex_notify
 from .codex_config import _remove_codex_developer_instructions
@@ -111,12 +112,18 @@ def _self_uninstall() -> bool:
 def _remove_agent_files(dest_dir: Path) -> list[str]:
     """Remove HelloAGENTS agent definition files from ~/.claude/agents/."""
     agents_dir = dest_dir / "agents"
+    managed_agents = get_helloagents_module_path() / "agents"
     removed = []
-    if not agents_dir.exists():
+    if not agents_dir.exists() or not managed_agents.exists():
         return removed
-    for f in agents_dir.glob(f"{AGENT_PREFIX}*.md"):
-        f.unlink()
-        removed.append(str(f))
+    for source in managed_agents.glob("ha-*.md"):
+        installed = agents_dir / source.name
+        if not installed.is_file() or installed.is_symlink():
+            continue
+        if installed.read_bytes() != source.read_bytes():
+            continue
+        installed.unlink()
+        removed.append(str(installed))
     if cleanup_empty_parent(agents_dir):
         removed.append(f"{agents_dir} (empty parent)")
     return removed
@@ -296,7 +303,7 @@ def uninstall(target: str, show_package_hint: bool = True) -> bool:
     ok = True
     if plugin_dest.exists():
         try:
-            if win_safe_rmtree(plugin_dest):
+            if win_safe_rmtree(plugin_dest, dest_dir):
                 removed.append(str(plugin_dest))
             else:
                 print(_msg(f"  ✗ 无法移除 {plugin_dest}（可能被 CLI 进程占用）",

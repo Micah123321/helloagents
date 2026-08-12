@@ -287,7 +287,7 @@ def clean() -> None:
 
         for cache_dir in list(plugin_dir.rglob("__pycache__")):
             if cache_dir.is_dir():
-                if win_safe_rmtree(cache_dir):
+                if win_safe_rmtree(cache_dir, plugin_dir):
                     removed += 1
                 else:
                     print(_msg(f"  ⚠ 无法清理 {cache_dir}",

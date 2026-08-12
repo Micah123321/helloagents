@@ -3,13 +3,20 @@ set -eu
 
 # ─── HelloAGENTS Installer (macOS / Linux) ───
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/Micah123321/helloagents/dev/2.3.8/install.sh | bash
+#   Download and verify install.sh from the release's pinned commit before running it.
 #
 # Environment variables:
 #   HELLOAGENTS_BRANCH  — branch to install from (default: dev/2.3.8)
 
 REPO="https://github.com/Micah123321/helloagents"
 BRANCH="${HELLOAGENTS_BRANCH:-dev/2.3.8}"
+
+case "$BRANCH" in
+    ""|-*|*..*|*@\{*|*[!A-Za-z0-9._/-]*)
+        printf '[error] Invalid HELLOAGENTS_BRANCH.\n' >&2
+        exit 1
+        ;;
+esac
 
 # ─── Colors ───
 RED='\033[0;31m'
@@ -77,53 +84,26 @@ else
     warn "$(msg "未找到 uv，将使用 pip。" "uv not found, will fall back to pip.")"
 fi
 
-# ─── Step 3: Clean up corrupted pip remnants ───
-# Scan ALL site-packages directories returned by getsitepackages().
-while IFS= read -r sp_dir; do
-    [ -d "$sp_dir" ] || continue
-    for remnant in "$sp_dir"/~*; do
-        [ -e "$remnant" ] || continue
-        if rm -rf "$remnant" 2>/dev/null; then
-            info "$(msg "已清理 pip 残留目录: $(basename "$remnant")" "Cleaned up pip remnant: $(basename "$remnant")")"
-        else
-            warn "$(msg "无法删除残留目录: $remnant，请手动删除。" "Cannot remove remnant: $remnant, please delete manually.")"
-        fi
-    done
-done < <("$PYTHON_CMD" -c "import site
-for p in site.getsitepackages():
-    print(p)" 2>/dev/null)
-
 # ─── Step 4: Install ───
 printf "\n${BOLD}$(msg "正在从分支 ${CYAN}${BRANCH}${RESET}${BOLD} 安装 HelloAGENTS" "Installing HelloAGENTS from branch: ${CYAN}${BRANCH}")${RESET}\n\n"
 
+REMOTE_LINE=$(git ls-remote "$REPO" "refs/heads/$BRANCH")
+COMMIT=${REMOTE_LINE%%[[:space:]]*}
+case "$COMMIT" in
+    ""|*[!0-9a-fA-F]*) error "$(msg "无法解析并验证远程 commit。" "Could not resolve and verify the remote commit.")" ;;
+esac
+if [ "${#COMMIT}" -ne 40 ]; then
+    error "$(msg "远程 commit 格式无效。" "Remote commit has an invalid format.")"
+fi
+info "$(msg "固定 commit: $COMMIT" "Pinned commit: $COMMIT")"
+
 if [ "$HAS_UV" = true ]; then
     info "$(msg "使用 uv 安装..." "Installing with uv...")"
-    if [ "$BRANCH" = "main" ]; then
-        uv tool install --force --no-cache --from "git+${REPO}" helloagents
-    else
-        uv tool install --force --no-cache --from "git+${REPO}@${BRANCH}" helloagents
-    fi
+    uv tool install --force --no-cache --from "git+${REPO}@${COMMIT}" helloagents
 else
     info "$(msg "使用 pip 安装..." "Installing with pip...")"
-    if [ "$BRANCH" = "main" ]; then
-        "$PYTHON_CMD" -m pip install --upgrade --no-cache-dir "git+${REPO}.git"
-    else
-        "$PYTHON_CMD" -m pip install --upgrade --no-cache-dir "git+${REPO}.git@${BRANCH}"
-    fi
+    "$PYTHON_CMD" -m pip install --upgrade --no-cache-dir "git+${REPO}.git@${COMMIT}"
 fi
-
-# Post-install cleanup: pip may create new remnants during upgrade
-while IFS= read -r sp_dir; do
-    [ -d "$sp_dir" ] || continue
-    for remnant in "$sp_dir"/~*; do
-        [ -e "$remnant" ] || continue
-        if ! rm -rf "$remnant" 2>/dev/null; then
-            warn "$(msg "无法删除残留目录: $remnant，请手动删除。" "Cannot remove remnant: $remnant, please delete manually.")"
-        fi
-    done
-done < <("$PYTHON_CMD" -c "import site
-for p in site.getsitepackages():
-    print(p)" 2>/dev/null)
 
 # ─── Step 5: Verify ───
 printf "\n"
@@ -142,6 +122,6 @@ printf "${BOLD}$(msg "👉 第二步：选择要安装到的目标 CLI" "👉 St
 
 if command -v helloagents >/dev/null 2>&1; then
     printf "\n"
-    # Redirect stdin from /dev/tty so interactive input works even when piped (curl | bash)
+    # Read interactive target selection from the terminal.
     helloagents </dev/tty
 fi

@@ -16,9 +16,9 @@ _CLAUDE_HOOKS_JSON = "claude_code_hooks.json"
 # Hooks configuration helpers (delegates to shared settings_hooks logic)
 # ---------------------------------------------------------------------------
 
-def _configure_claude_hooks(dest_dir: Path) -> None:
+def _configure_claude_hooks(dest_dir: Path) -> bool:
     """Merge HelloAGENTS hooks into Claude Code settings.json."""
-    _configure_settings_hooks(dest_dir, _CLAUDE_HOOKS_JSON)
+    return _configure_settings_hooks(dest_dir, _CLAUDE_HOOKS_JSON)
 
 
 def _remove_claude_hooks(dest_dir: Path) -> bool:
@@ -30,7 +30,7 @@ def _remove_claude_hooks(dest_dir: Path) -> bool:
 # Auto-memory configuration
 # ---------------------------------------------------------------------------
 
-def _configure_claude_auto_memory(dest_dir: Path) -> None:
+def _configure_claude_auto_memory(dest_dir: Path) -> bool:
     """在 settings.json 设置 autoMemoryEnabled: false，防止与 AGENTS.md 规则冲突。
 
     每次安装/更新都强制设为 false，即使用户手动改为 true。
@@ -44,7 +44,7 @@ def _configure_claude_auto_memory(dest_dir: Path) -> None:
         except Exception:
             print(_msg("  ⚠ settings.json 格式异常，跳过 autoMemory 配置",
                        "  ⚠ settings.json malformed, skipping autoMemory config"))
-            return
+            return False
 
     settings["autoMemoryEnabled"] = False
     try:
@@ -54,9 +54,10 @@ def _configure_claude_auto_memory(dest_dir: Path) -> None:
     except PermissionError:
         print(_msg("  ⚠ 无法写入 settings.json（文件被占用，请关闭 Claude Code 后重试）",
                    "  ⚠ Cannot write settings.json (file locked, close Claude Code and retry)"))
-        return
+        return False
     print(_msg("  已关闭 autoMemory (settings.json)",
                "  Disabled autoMemory (settings.json)"))
+    return True
 
 
 def _remove_claude_auto_memory(dest_dir: Path) -> bool:
@@ -124,10 +125,11 @@ def _get_helloagents_permissions(dest_dir: Path) -> list[str]:
         f'Bash(python "{plugin_posix}/rlm/**")',
         f'Bash(python -X utf8 "{plugin_posix}/rlm/**")',
         # Bash: CLI commands & cache read
-        "Bash(helloagents *)",
+        "Bash(helloagents help *)",
+        "Bash(helloagents status *)",
+        "Bash(helloagents version *)",
         f"Bash(cat {home_ha}/*)",
         f"Bash(ls {plugin_posix}/**)",
-        f"Bash(find {plugin_posix} *)",
         # Edit (covers Write too): plugin user data (memory, sessions, commands, sounds)
         f"Edit({plugin_posix}/user/**)",
         # Edit: project knowledge base
@@ -160,7 +162,7 @@ def _is_helloagents_permission(entry: str, dest_dir: Path) -> bool:
     return False
 
 
-def _configure_claude_permissions(dest_dir: Path) -> None:
+def _configure_claude_permissions(dest_dir: Path) -> bool:
     """Add HelloAGENTS tool permissions to Claude Code settings.json.
 
     Uses pattern matching to identify and replace HelloAGENTS entries,
@@ -174,7 +176,9 @@ def _configure_claude_permissions(dest_dir: Path) -> None:
         try:
             settings = json.loads(settings_path.read_text(encoding="utf-8"))
         except Exception:
-            return
+            print(_msg("  ⚠ settings.json 格式异常，跳过工具权限配置",
+                       "  ⚠ settings.json malformed, skipping tool permissions"))
+            return False
 
     perms = settings.setdefault("permissions", {})
     allow = perms.setdefault("allow", [])
@@ -193,9 +197,10 @@ def _configure_claude_permissions(dest_dir: Path) -> None:
     except PermissionError:
         print(_msg("  ⚠ 无法写入 settings.json（文件被占用，请关闭 Claude Code 后重试）",
                    "  ⚠ Cannot write settings.json (file locked, close Claude Code and retry)"))
-        return
+        return False
     print(_msg(f"  已配置 {len(our_entries)} 条工具权限 (settings.json)",
                f"  Configured {len(our_entries)} tool permission(s) (settings.json)"))
+    return True
 
 
 def _remove_claude_permissions(dest_dir: Path) -> bool:

@@ -162,7 +162,7 @@ def clean_skills_dir(dest_dir: Path) -> list[str]:
     removed = []
     skills_dir = dest_dir / "skills" / "helloagents"
     if skills_dir.exists():
-        if win_safe_rmtree(skills_dir):
+        if win_safe_rmtree(skills_dir, dest_dir):
             removed.append(str(skills_dir))
             skills_parent = dest_dir / "skills"
             if skills_parent.exists() and not any(skills_parent.iterdir()):

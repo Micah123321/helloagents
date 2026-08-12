@@ -29,7 +29,7 @@ from .claude_rules import _deploy_claude_rules
 from .settings_hooks import (
     _configure_gemini_hooks, _configure_qwen_hooks, _configure_grok_hooks,
 )
-from .win_helpers import win_safe_rmtree
+from .win_helpers import _is_link_or_reparse, win_safe_rmtree
 
 
 # ---------------------------------------------------------------------------
@@ -38,20 +38,35 @@ from .win_helpers import win_safe_rmtree
 
 
 
-def _deploy_agent_files(dest_dir: Path) -> None:
+def _deploy_agent_files(dest_dir: Path) -> bool:
     """Deploy HelloAGENTS agent definition files to ~/.claude/agents/."""
     agents_src = get_helloagents_module_path() / "agents"
     if not agents_src.exists():
-        return
+        return True
     agents_dest = dest_dir / "agents"
+    if _is_link_or_reparse(agents_dest):
+        print(_msg("  ✗ agents 目录是符号链接，拒绝部署。",
+                   "  ✗ Refusing to deploy into a symlinked agents directory."))
+        return False
     agents_dest.mkdir(parents=True, exist_ok=True)
+    source_files = list(agents_src.glob(f"{AGENT_PREFIX}*.md"))
+    for src_file in source_files:
+        target = agents_dest / src_file.name
+        if (_is_link_or_reparse(target)
+                or (target.exists() and target.read_bytes() != src_file.read_bytes())):
+            print(_msg(f"  ✗ 保留同名用户 agent: {target}",
+                       f"  ✗ Preserving conflicting user agent: {target}"))
+            return False
+
     count = 0
-    for src_file in agents_src.glob(f"{AGENT_PREFIX}*.md"):
-        shutil.copy2(src_file, agents_dest / src_file.name)
+    for src_file in source_files:
+        target = agents_dest / src_file.name
+        shutil.copy2(src_file, target)
         count += 1
     if count:
         print(_msg(f"  已部署 {count} 个子代理定义 ({agents_dest})",
                    f"  Deployed {count} agent definition(s) ({agents_dest})"))
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +114,7 @@ def clean_stale_files(dest_dir: Path, current_rules_file: str) -> list[str]:
     if plugin_dir.exists():
         for cache_dir in plugin_dir.rglob("__pycache__"):
             if cache_dir.is_dir():
-                if win_safe_rmtree(cache_dir):
+                if win_safe_rmtree(cache_dir, plugin_dir):
                     removed.append(str(cache_dir))
 
     # --- Clean stale rules/helloagents/ split rule files ---
@@ -279,7 +294,7 @@ def install(target: str) -> bool:
     try:
         # Remove old module directory completely before copying
         if plugin_dest.exists():
-            if not win_safe_rmtree(plugin_dest):
+            if not win_safe_rmtree(plugin_dest, dest_dir):
                 print(_msg(f"  ✗ 无法移除旧模块（可能被 CLI 进程占用）: {plugin_dest}",
                            f"  ✗ Cannot remove old module (may be locked by CLI): {plugin_dest}"))
                 return False
@@ -341,13 +356,11 @@ def install(target: str) -> bool:
 
         # Deploy agent definition files (Claude Code only)
         if target == "claude":
-            _deploy_agent_files(dest_dir)
+            if not _deploy_agent_files(dest_dir):
+                return False
     except Exception as e:
         print(_msg(f"  ✗ 安装失败: {e}", f"  ✗ Installation failed: {e}"))
         return False
-
-    print(_msg(f"  {target} 安装完成！请重启终端以应用更改。",
-               f"  Installation complete for {target}! Please restart your terminal to apply changes."))
 
     # 同步全局配置文件（补缺失键、警告未知键）
     _sync_global_config()
@@ -385,12 +398,25 @@ def install(target: str) -> bool:
         ],
         # opencode: 纯规则模式，无 hooks/settings.json 配置
     }
+    post_install_ok = True
     for fn, cn_label, en_label in _POST_INSTALL.get(target, []):
         try:
-            fn(dest_dir)
+            if fn(dest_dir) is False:
+                post_install_ok = False
+                print(_msg(f"  ✗ 配置 {cn_label} 失败",
+                           f"  ✗ Failed to configure {en_label}"))
         except Exception as e:
+            post_install_ok = False
             print(_msg(f"  ⚠ 配置 {cn_label} 时出错: {e}",
                        f"  ⚠ Error configuring {en_label}: {e}"))
+
+    if not post_install_ok:
+        print(_msg(f"  ✗ {target} 安装未完整完成。",
+                   f"  ✗ Installation for {target} did not complete."))
+        return False
+
+    print(_msg(f"  {target} 安装完成！请重启终端以应用更改。",
+               f"  Installation complete for {target}! Please restart your terminal to apply changes."))
 
     if target == "codex":
         print(_msg("  提示: 需在 Codex CLI 中执行 /experimental 开启多代理功能。",

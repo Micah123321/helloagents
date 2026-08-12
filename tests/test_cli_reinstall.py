@@ -8,36 +8,51 @@ from helloagents import cli
 
 
 class _Result:
-    def __init__(self, returncode: int):
+    def __init__(self, returncode: int, stdout: str = ""):
         self.returncode = returncode
+        self.stdout = stdout
 
 
 class CliReinstallTests(unittest.TestCase):
     def test_reinstall_uses_maintenance_branch_and_no_cache_by_default(self):
-        run = Mock(return_value=_Result(0))
+        commit = "a" * 40
+        run = Mock(side_effect=[_Result(0, f"{commit}\trefs/heads/dev/2.3.8\n"), _Result(0)])
 
         with patch("shutil.which", return_value="uv"), \
              patch("subprocess.run", run), \
              patch("sys.stdout", io.StringIO()):
             cli._reinstall([])
 
-        run.assert_called_once()
-        cmd = run.call_args.args[0]
+        self.assertEqual(run.call_count, 2)
+        cmd = run.call_args_list[1].args[0]
         self.assertEqual(cmd[:3], ["uv", "tool", "install"])
-        self.assertIn("git+https://github.com/Micah123321/helloagents.git@dev/2.3.8", cmd)
+        self.assertIn(f"git+https://github.com/Micah123321/helloagents.git@{commit}", cmd)
         self.assertIn("--force", cmd)
         self.assertIn("--no-cache", cmd)
 
     def test_reinstall_preserves_explicit_branch(self):
-        run = Mock(return_value=_Result(0))
+        commit = "b" * 40
+        run = Mock(side_effect=[_Result(0, f"{commit}\trefs/heads/main\n"), _Result(0)])
 
         with patch("shutil.which", return_value="uv"), \
              patch("subprocess.run", run), \
              patch("sys.stdout", io.StringIO()):
             cli._reinstall(["main"])
 
-        cmd = run.call_args.args[0]
-        self.assertIn("git+https://github.com/Micah123321/helloagents.git@main", cmd)
+        self.assertEqual(run.call_args_list[0].args[0][-1], "refs/heads/main")
+        cmd = run.call_args_list[1].args[0]
+        self.assertIn(f"git+https://github.com/Micah123321/helloagents.git@{commit}", cmd)
+
+    def test_reinstall_aborts_when_remote_commit_cannot_be_pinned(self):
+        run = Mock(return_value=_Result(0, "not-a-commit\trefs/heads/main\n"))
+
+        with patch("shutil.which", return_value="uv"), \
+             patch("subprocess.run", run), \
+             patch("sys.stdout", io.StringIO()), \
+             self.assertRaises(SystemExit):
+            cli._reinstall(["main"])
+
+        self.assertEqual(run.call_count, 1)
 
 
 if __name__ == "__main__":

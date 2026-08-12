@@ -232,7 +232,8 @@ def dispatch(args: list[str]) -> None:
         from .updater import _post_update_sync
         branch = args[1] if len(args) >= 2 else None
         total = int(args[2]) if len(args) >= 3 else None
-        _post_update_sync(branch, total)
+        if not _post_update_sync(branch, total):
+            sys.exit(1)
     elif cmd == "clean":
         from .status import clean
         clean()

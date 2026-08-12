@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shlex
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -14,15 +16,81 @@ def strip_inline_comment(value: str) -> str:
     return value.split("#", 1)[0].strip().strip('"').strip("'")
 
 
-def is_runnable_command(command: str) -> bool:
-    """Return whether a parsed runbook value is a concrete command."""
+SAFE_MODULES = {"pytest", "unittest", "py_compile"}
+SAFE_TOOLS = {"pytest", "ruff", "mypy"}
+SAFE_NPM_SCRIPTS = {"lint", "typecheck", "type-check", "test"}
+SHELL_META = ("\n", "\r", ";", "&", "|", ">", "<", "`", "$(", "${")
+FORBIDDEN_TOOL_ARGS = {
+    "pytest": {"--basetemp", "--rootdir", "--override-ini", "-p"},
+    "ruff": {"--fix", "--unsafe-fixes"},
+    "mypy": {"--install-types"},
+}
+
+
+def _has_executable_path(value: str) -> bool:
+    """Return whether an executable token names a path instead of a command."""
+    return (
+        value in {".", ".."}
+        or "/" in value
+        or "\\" in value
+        or (len(value) >= 2 and value[1] == ":")
+    )
+
+
+def _has_forbidden_tool_args(tool: str, args: list[str]) -> bool:
+    """Reject validation options that write, install, or load arbitrary code."""
+    forbidden = FORBIDDEN_TOOL_ARGS.get(tool, set())
+    for arg in args:
+        option = arg.split("=", 1)[0]
+        if option in forbidden:
+            return True
+    return False
+
+
+def parse_validation_command(command: str) -> Optional[list[str]]:
+    """Parse a project validation command into a conservative argv list."""
     command = command.strip()
-    if not command:
-        return False
-    # Template placeholders must not reach shell=True execution.
-    if "{" in command and "}" in command:
-        return False
-    return True
+    if not command or any(token in command for token in SHELL_META):
+        return None
+    if "{" in command or "}" in command:
+        return None
+    try:
+        argv = shlex.split(command, posix=True)
+    except ValueError:
+        return None
+    if not argv:
+        return None
+
+    if _has_executable_path(argv[0]):
+        return None
+    executable = argv[0].lower()
+    if executable in {"python", "python3", "py"}:
+        module_index = 1
+        if argv[1:3] == ["-X", "utf8"]:
+            module_index = 3
+        if (len(argv) <= module_index + 1
+                or argv[module_index] != "-m"
+                or argv[module_index + 1] not in SAFE_MODULES):
+            return None
+        tool = argv[module_index + 1]
+        if _has_forbidden_tool_args(tool, argv[module_index + 2:]):
+            return None
+        argv[0] = sys.executable
+    elif executable == "npm":
+        if (len(argv) == 2 and argv[1] == "test"):
+            return argv
+        if len(argv) != 3 or argv[1] != "run" or argv[2] not in SAFE_NPM_SCRIPTS:
+            return None
+    elif executable not in SAFE_TOOLS:
+        return None
+    elif _has_forbidden_tool_args(executable, argv[1:]):
+        return None
+    return argv
+
+
+def is_runnable_command(command: str) -> bool:
+    """Return whether a parsed runbook value is a safe validation command."""
+    return parse_validation_command(command) is not None
 
 
 def indent_width(line: str) -> int:

@@ -13,6 +13,7 @@ except ModuleNotFoundError:  # Python 3.10 compatibility
 from helloagents.core.codex_config import (
     _CODEX_DEVELOPER_INSTRUCTIONS,
     _configure_codex_developer_instructions,
+    _remove_codex_developer_instructions,
 )
 
 
@@ -83,6 +84,58 @@ class CodexConfigTests(unittest.TestCase):
             if tomllib is not None:
                 parsed = tomllib.loads(config)
                 self.assertIn("developer_instructions", parsed)
+
+    def test_remove_restores_backed_up_user_instructions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest_dir = Path(tmp)
+            config_path = dest_dir / "config.toml"
+            user_value = 'developer_instructions = "keep user value"'
+            config_path.write_text(user_value + '\n\n[tools]\n', encoding="utf-8")
+
+            _configure_codex_developer_instructions(dest_dir)
+            self.assertTrue(_remove_codex_developer_instructions(dest_dir))
+
+            restored = config_path.read_text(encoding="utf-8")
+            self.assertIn(user_value, restored)
+            self.assertNotIn("Sub-agent standing authorization", restored)
+            self.assertFalse((dest_dir / "developer_instructions.bak").exists())
+
+    def test_remove_preserves_unmanaged_instructions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest_dir = Path(tmp)
+            config_path = dest_dir / "config.toml"
+            user_value = 'developer_instructions = "keep user value"'
+            config_path.write_text(user_value + "\n", encoding="utf-8")
+
+            self.assertFalse(_remove_codex_developer_instructions(dest_dir))
+            self.assertEqual(config_path.read_text(encoding="utf-8"), user_value + "\n")
+
+    def test_configure_preserves_escaped_user_instructions_for_restore(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest_dir = Path(tmp)
+            config_path = dest_dir / "config.toml"
+            user_value = 'developer_instructions = "say \\"hello\\" safely"'
+            config_path.write_text(user_value + "\n\n[tools]\n", encoding="utf-8")
+
+            self.assertTrue(_configure_codex_developer_instructions(dest_dir))
+            self.assertTrue(_remove_codex_developer_instructions(dest_dir))
+
+            restored = config_path.read_text(encoding="utf-8")
+            self.assertIn(user_value, restored)
+            if tomllib is not None:
+                self.assertEqual(tomllib.loads(restored)["developer_instructions"], 'say "hello" safely')
+
+    def test_configure_preserves_literal_user_instructions_for_restore(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest_dir = Path(tmp)
+            config_path = dest_dir / "config.toml"
+            user_value = "developer_instructions = 'keep literal value'"
+            config_path.write_text(user_value + "\n", encoding="utf-8")
+
+            self.assertTrue(_configure_codex_developer_instructions(dest_dir))
+            self.assertTrue(_remove_codex_developer_instructions(dest_dir))
+
+            self.assertIn(user_value, config_path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

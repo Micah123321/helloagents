@@ -1,6 +1,6 @@
 # ─── HelloAGENTS Installer (Windows PowerShell) ───
 # Usage:
-#   irm https://raw.githubusercontent.com/Micah123321/helloagents/dev/2.3.8/install.ps1 | iex
+#   下载并校验发布说明中的固定 commit 版本 install.ps1 后再执行。
 #
 # Environment variables:
 #   $env:HELLOAGENTS_BRANCH  — branch to install from (default: dev/2.3.8)
@@ -9,6 +9,11 @@ $ErrorActionPreference = "Stop"
 
 $Repo   = "https://github.com/Micah123321/helloagents"
 $Branch = if ($env:HELLOAGENTS_BRANCH) { $env:HELLOAGENTS_BRANCH } else { "dev/2.3.8" }
+
+if ($Branch -notmatch '^[A-Za-z0-9][A-Za-z0-9._/-]*$' -or $Branch.Contains('..') -or $Branch.Contains('@{')) {
+    Write-Host "[error] Invalid HELLOAGENTS_BRANCH." -ForegroundColor Red
+    exit 1
+}
 
 # ─── Helpers ───
 # Locale detection: zh for Chinese, en otherwise
@@ -64,58 +69,27 @@ try {
     Write-Warn (Msg "未找到 uv，将使用 pip。" "uv not found, will fall back to pip.")
 }
 
-# ─── Step 3: Clean up corrupted pip remnants ───
-# Scan ALL site-packages directories (getsitepackages()[0] on Windows is the
-# Python root, not the actual site-packages dir).
-$SitePackagesList = & $PythonCmd -c "import site; print('\n'.join(site.getsitepackages()))" 2>$null
-foreach ($SitePackages in ($SitePackagesList -split "`n")) {
-    $SitePackages = $SitePackages.Trim()
-    if (-not $SitePackages -or -not (Test-Path $SitePackages)) { continue }
-    Get-ChildItem -Path $SitePackages -Directory -Filter "~*" -ErrorAction SilentlyContinue | ForEach-Object {
-        try {
-            Remove-Item $_.FullName -Recurse -Force -ErrorAction Stop
-            Write-Info (Msg "已清理 pip 残留目录: $($_.Name)" "Cleaned up pip remnant: $($_.Name)")
-        } catch {
-            Write-Warn (Msg "无法删除残留目录: $($_.FullName)，请手动删除。" "Cannot remove remnant: $($_.FullName), please delete manually.")
-        }
-    }
-}
-
 # ─── Step 4: Install ───
 Write-Host ""
 Write-Host (Msg "正在从分支 $Branch 安装 HelloAGENTS" "Installing HelloAGENTS from branch: $Branch") -ForegroundColor White
 
+$RemoteLine = & git ls-remote $Repo "refs/heads/$Branch" 2>$null
+$Commit = (($RemoteLine | Select-Object -First 1) -split '\s+')[0]
+if ($LASTEXITCODE -ne 0 -or $Commit -notmatch '^[0-9a-fA-F]{40}$') {
+    Write-Err (Msg "无法解析并验证远程 commit。" "Could not resolve and verify the remote commit.")
+}
+Write-Info (Msg "固定 commit: $Commit" "Pinned commit: $Commit")
+
 if ($HasUv) {
     Write-Info (Msg "使用 uv 安装..." "Installing with uv...")
-    if ($Branch -eq "main") {
-        & uv tool install --force --no-cache --from "git+$Repo" helloagents
-    } else {
-        & uv tool install --force --no-cache --from "git+$Repo@$Branch" helloagents
-    }
+    & uv tool install --force --no-cache --from "git+$Repo@$Commit" helloagents
 } else {
     Write-Info (Msg "使用 pip 安装..." "Installing with pip...")
-    if ($Branch -eq "main") {
-        & $PythonCmd -m pip install --upgrade --no-cache-dir "git+$Repo.git"
-    } else {
-        & $PythonCmd -m pip install --upgrade --no-cache-dir "git+$Repo.git@$Branch"
-    }
+    & $PythonCmd -m pip install --upgrade --no-cache-dir "git+$Repo.git@$Commit"
 }
 
 if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {
     Write-Err (Msg "安装失败（退出码 $LASTEXITCODE）。" "Installation failed (exit code $LASTEXITCODE).")
-}
-
-# Post-install cleanup: pip may create new remnants during upgrade
-foreach ($SitePackages in ($SitePackagesList -split "`n")) {
-    $SitePackages = $SitePackages.Trim()
-    if (-not $SitePackages -or -not (Test-Path $SitePackages)) { continue }
-    Get-ChildItem -Path $SitePackages -Directory -Filter "~*" -ErrorAction SilentlyContinue | ForEach-Object {
-        try {
-            Remove-Item $_.FullName -Recurse -Force -ErrorAction Stop
-        } catch {
-            Write-Warn (Msg "无法删除残留目录: $($_.FullName)，请手动删除。" "Cannot remove remnant: $($_.FullName), please delete manually.")
-        }
-    }
 }
 
 # ─── Step 5: Verify ───

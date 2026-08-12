@@ -3,6 +3,11 @@
 import re
 from pathlib import Path
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    tomllib = None
+
 from .._common import _msg, CODEX_NOTIFY_SCRIPT, PLUGIN_DIR_NAME, get_python_cmd
 
 
@@ -315,14 +320,43 @@ input is task-related or continuation request), or enter routing if user \
 requests new task.\
 """
 
-# Match developer_instructions = """...""" or "..." (top-level only)
-_DI_RE = re.compile(
-    r'^developer_instructions\s*=\s*(?:"{3}[\s\S]*?"{3}|"[^"]*")',
-    re.MULTILINE,
-)
+def _developer_instructions_span(content: str) -> tuple[int, int] | None:
+    """Locate a top-level TOML string assignment without interpreting it."""
+    match = re.search(r'^developer_instructions\s*=\s*', content, re.MULTILINE)
+    if not match:
+        return None
+    start = match.start()
+    value_start = match.end()
+    quote = content[value_start:value_start + 3]
+    if quote in {'"""', "'''"}:
+        closing = content.find(quote, value_start + 3)
+        if closing < 0:
+            return None
+        return start, closing + 3
+    if value_start >= len(content) or content[value_start] not in {'"', "'"}:
+        return None
+    delimiter = content[value_start]
+    escaped = False
+    for index in range(value_start + 1, len(content)):
+        char = content[index]
+        if delimiter == '"' and char == "\\" and not escaped:
+            escaped = True
+            continue
+        if char == delimiter and not escaped:
+            return start, index + 1
+        if char in "\r\n" and not escaped:
+            return None
+        escaped = False
+    return None
 
 
-def _configure_codex_developer_instructions(dest_dir: Path) -> None:
+def _validate_toml(content: str) -> None:
+    """Reject writes that would leave an invalid Codex TOML file."""
+    if tomllib is not None:
+        tomllib.loads(content)
+
+
+def _configure_codex_developer_instructions(dest_dir: Path) -> bool:
     """Ensure config.toml has developer_instructions with HelloAGENTS protocol."""
     config_path = dest_dir / "config.toml"
     content = ""
@@ -332,23 +366,27 @@ def _configure_codex_developer_instructions(dest_dir: Path) -> None:
     toml_val = f'developer_instructions = """\n{_CODEX_DEVELOPER_INSTRUCTIONS}\n"""'
 
     # Check if existing developer_instructions is user-defined (not ours)
-    m = _DI_RE.search(content)
-    if m:
-        existing = m.group(0)
+    span = _developer_instructions_span(content)
+    if "developer_instructions" in content and span is None:
+        raise ValueError("无法安全定位现有 developer_instructions")
+    if span:
+        existing = content[span[0]:span[1]]
         if "HelloAGENTS" not in existing:
             # User-defined content — backup before overwriting
             backup_path = config_path.parent / "developer_instructions.bak"
+            if backup_path.exists() or backup_path.is_symlink():
+                raise ValueError("developer_instructions 备份路径已存在")
             backup_path.write_text(existing, encoding="utf-8")
             print(_msg(
                 f"  ⚠ 已备份现有 developer_instructions 到: {backup_path}",
                 f"  ⚠ Backed up existing developer_instructions to: {backup_path}"))
 
     # Remove existing developer_instructions (ours or user's) and trailing blanks
-    if m:
-        end = m.end()
+    if span:
+        end = span[1]
         while end < len(content) and content[end] in '\n\r':
             end += 1
-        content = content[:m.start()] + content[end:]
+        content = content[:span[0]] + content[end:]
         content = re.sub(r'\n{3,}', '\n\n', content)
 
     # Insert before notify (if exists) or before first section
@@ -365,31 +403,44 @@ def _configure_codex_developer_instructions(dest_dir: Path) -> None:
             # No sections, append at end
             content = content.rstrip() + "\n\n" + toml_val + "\n"
 
+    _validate_toml(content)
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(content, encoding="utf-8")
     print(_msg("  已配置 developer_instructions（HelloAGENTS 完整恢复协议）",
                "  Configured developer_instructions (HelloAGENTS recovery protocol)"))
+    return True
 
 
 def _remove_codex_developer_instructions(dest_dir: Path) -> bool:
-    """Remove developer_instructions from config.toml. Returns True if removed."""
+    """Remove managed instructions and restore a backed-up user value."""
     config_path = dest_dir / "config.toml"
     if not config_path.exists():
         return False
     content = config_path.read_text(encoding="utf-8")
 
-    m = _DI_RE.search(content)
-    if not m:
+    span = _developer_instructions_span(content)
+    if not span or "HelloAGENTS" not in content[span[0]:span[1]]:
         return False
 
     # Remove the entire key-value pair and trailing blank lines
-    end = m.end()
+    end = span[1]
     while end < len(content) and content[end] in '\n\r':
         end += 1
-    content = content[:m.start()] + content[end:]
+    content = content[:span[0]] + content[end:]
     content = re.sub(r'\n{3,}', '\n\n', content)
 
+    backup_path = dest_dir / "developer_instructions.bak"
+    if backup_path.is_file() and not backup_path.is_symlink():
+        backup = backup_path.read_text(encoding="utf-8").strip()
+        backup_span = _developer_instructions_span(backup)
+        if backup_span != (0, len(backup)):
+            return False
+        content = _insert_before_first_section(content, backup)
+
+    _validate_toml(content)
     config_path.write_text(content, encoding="utf-8")
+    if backup_path.is_file() and not backup_path.is_symlink():
+        backup_path.unlink()
     return True
 
 

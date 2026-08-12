@@ -1,7 +1,9 @@
 """HelloAGENTS Updater - Update command and post-update sync."""
 
 import os
+import re
 import sys
+from urllib.parse import urlsplit
 from importlib.metadata import version as get_version
 
 from .._common import (
@@ -25,13 +27,29 @@ from .win_helpers import (
 # update command
 # ---------------------------------------------------------------------------
 
-def _build_git_install_url(repo_url: str, branch: str) -> str:
-    """Build a pip/uv VCS requirement URL from the detected install source."""
+def _build_git_install_url(repo_url: str, commit: str) -> str:
+    """Build a pip/uv VCS URL pinned to a verified commit."""
     base = (repo_url or REPO_URL).removeprefix("git+")
     if base.startswith("https://github.com/") and not base.endswith(".git"):
         base = f"{base}.git"
-    branch_suffix = f"@{branch}" if branch != "main" else ""
-    return f"git+{base}{branch_suffix}"
+    return f"git+{base}@{commit}"
+
+
+def _is_safe_update_source(repo_url: str) -> bool:
+    """Allow only the canonical credential-free HTTPS repository."""
+    parsed = urlsplit(repo_url.removeprefix("git+"))
+    parts = [part for part in parsed.path.split("/") if part]
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname == "github.com"
+        and parsed.username is None
+        and parsed.password is None
+        and not parsed.query
+        and not parsed.fragment
+        and len(parts) == 2
+        and parts[0].lower() == "micah123321"
+        and parts[1].removesuffix(".git").lower() == "helloagents"
+    )
 
 
 def _is_windows_entrypoint_lock_error(text: str) -> bool:
@@ -131,11 +149,6 @@ def update(switch_branch: str | None = None) -> None:
     """Update HelloAGENTS to the latest version, then auto-sync installed targets."""
     import subprocess
 
-    # Clean up corrupted pip remnants and leftover .exe.bak
-    _cleanup_pip_remnants()
-    if sys.platform == "win32":
-        _win_cleanup_bak()
-
     # Snapshot installed targets before update. In deferred mode (Windows exe lock),
     # these targets are passed as post_cmds to the deferred script. The slight timing
     # gap is acceptable — users won't modify install state during an active update.
@@ -154,6 +167,21 @@ def update(switch_branch: str | None = None) -> None:
 
     branch = switch_branch or _resolve_branch(local_ver)
     repo_url = _get_repo_url()
+    if not _is_safe_update_source(repo_url):
+        print(_msg(
+            f"  ✗ 拒绝不受支持的更新来源: {repo_url}",
+            f"  ✗ Refusing unsupported update source: {repo_url}"))
+        return
+
+    try:
+        pinned_commit = _remote_commit_id(branch, repo_url)
+    except Exception:
+        pinned_commit = ""
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", pinned_commit):
+        print(_msg(
+            "  ✗ 无法解析并验证远程 commit，已取消更新。",
+            "  ✗ Could not resolve and verify the remote commit; update cancelled."))
+        return
 
     # Fetch remote version (unified helper — deduplicates old inline logic)
     print(_msg("  正在检查远程版本...", "  Checking remote version..."))
@@ -164,6 +192,7 @@ def update(switch_branch: str | None = None) -> None:
     print(_msg(f"  本地版本: {local_ver}", f"  Local version: {local_ver}"))
     print(_msg(f"  远程版本: {remote_ver or '未知'}", f"  Remote version: {remote_ver or 'unknown'}"))
     print(_msg(f"  分支: {branch}", f"  Branch: {branch}"))
+    print(_msg(f"  固定 commit: {pinned_commit}", f"  Pinned commit: {pinned_commit}"))
     print()
 
     # --- user confirmation ---
@@ -174,11 +203,7 @@ def update(switch_branch: str | None = None) -> None:
         default_yes = True
     elif remote_ver and remote_ver == local_ver:
         local_sha = _local_commit_id()
-        remote_sha = ""
-        try:
-            remote_sha = _remote_commit_id(branch, repo_url)
-        except Exception:
-            pass
+        remote_sha = pinned_commit
         if local_sha and remote_sha and local_sha == remote_sha:
             prompt = _msg(
                 "  本地版本与远程仓库完全一致，是否强制覆盖更新？(y/N): ",
@@ -213,8 +238,13 @@ def update(switch_branch: str | None = None) -> None:
 
     print()
 
+    # Cleanup is destructive, so it runs only after explicit confirmation.
+    _cleanup_pip_remnants()
+    if sys.platform == "win32":
+        _win_cleanup_bak()
+
     # --- execute update ---
-    install_url = _build_git_install_url(repo_url, branch)
+    install_url = _build_git_install_url(repo_url, pinned_commit)
     updated = False
     method = _detect_install_method()
     print(_msg("  正在从远程仓库下载并安装，请稍候...",
@@ -325,12 +355,16 @@ def update(switch_branch: str | None = None) -> None:
     # detection, sync).  This avoids stale in-memory code after branch switch.
     env = os.environ.copy()
     env["HELLOAGENTS_NO_UPDATE_CHECK"] = "1"
-    subprocess.run(
+    post_result = subprocess.run(
         [sys.executable, "-m", "helloagents.cli",
          "_post_update", branch, str(total_steps)],
         env=env,
     )
-    return
+    if post_result.returncode != 0:
+        raise RuntimeError(_msg(
+            "更新包已安装，但 CLI 安全配置同步失败。",
+            "Package updated, but CLI security configuration sync failed.",
+        ))
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +372,7 @@ def update(switch_branch: str | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 def _post_update_sync(branch: str | None = None,
-                      total_steps: int | None = None) -> None:
+                      total_steps: int | None = None) -> bool:
     """Execute Phase 2+3 after a successful package update.
 
     This function is designed to be called from a *new* process so that the
@@ -390,7 +424,9 @@ def _post_update_sync(branch: str | None = None,
                            else _msg("同步失败", "sync failed"))
             print(f"  {mark} {t:10} {status_text}")
         print()
+        return all(results.values())
     else:
         print()
         print(_msg("  未检测到已安装的 CLI 目标。执行 'helloagents' 选择安装。",
                    "  No installed CLI targets detected. Run 'helloagents' to install."))
+        return True

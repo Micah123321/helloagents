@@ -35,7 +35,7 @@ def _load_hooks_json(hooks_json_name: str) -> dict:
         return {}
 
 
-def _configure_settings_hooks(dest_dir: Path, hooks_json_name: str) -> None:
+def _configure_settings_hooks(dest_dir: Path, hooks_json_name: str) -> bool:
     """Generic: Load hooks JSON, resolve placeholders, merge into settings.json.
 
     Idempotent: Uses "remove old + add new" strategy. This ensures clean updates
@@ -50,11 +50,11 @@ def _configure_settings_hooks(dest_dir: Path, hooks_json_name: str) -> None:
         except Exception:
             print(_msg("  ⚠ settings.json 格式异常，跳过 Hooks 配置",
                        "  ⚠ settings.json malformed, skipping hooks config"))
-            return
+            return False
 
     our_hooks = _load_hooks_json(hooks_json_name)
     if not our_hooks:
-        return
+        return False
 
     # Resolve {SCRIPTS_DIR} to actual installed path
     scripts_path = (dest_dir / PLUGIN_DIR_NAME / "scripts").as_posix()
@@ -77,11 +77,12 @@ def _configure_settings_hooks(dest_dir: Path, hooks_json_name: str) -> None:
     except PermissionError:
         print(_msg("  ⚠ 无法写入 settings.json（文件被占用，请关闭对应 CLI 后重试）",
                    "  ⚠ Cannot write settings.json (file locked, close the CLI and retry)"))
-        return
+        return False
 
     count = sum(len(v) for v in our_hooks.values())
     print(_msg(f"  已配置 {count} 个 Hooks ({settings_path.name})",
                f"  Configured {count} hook(s) ({settings_path.name})"))
+    return True
 
 
 def _remove_settings_hooks(dest_dir: Path) -> bool:
@@ -136,9 +137,9 @@ def _remove_settings_hooks(dest_dir: Path) -> bool:
 # CLI-specific wrappers
 # ---------------------------------------------------------------------------
 
-def _configure_gemini_hooks(dest_dir: Path) -> None:
+def _configure_gemini_hooks(dest_dir: Path) -> bool:
     """Configure Gemini CLI hooks."""
-    _configure_settings_hooks(dest_dir, GEMINI_HOOKS_JSON)
+    return _configure_settings_hooks(dest_dir, GEMINI_HOOKS_JSON)
 
 
 def _remove_gemini_hooks(dest_dir: Path) -> bool:
@@ -146,13 +147,13 @@ def _remove_gemini_hooks(dest_dir: Path) -> bool:
     return _remove_settings_hooks(dest_dir)
 
 
-def _configure_qwen_hooks(dest_dir: Path) -> None:
+def _configure_qwen_hooks(dest_dir: Path) -> bool:
     """Configure Qwen Code hooks (reuses Gemini hooks JSON).
 
     Qwen Code and Gemini CLI share the same settings.json hook event schema,
     verified compatible as of 2026-03.
     """
-    _configure_settings_hooks(dest_dir, GEMINI_HOOKS_JSON)
+    return _configure_settings_hooks(dest_dir, GEMINI_HOOKS_JSON)
 
 
 def _remove_qwen_hooks(dest_dir: Path) -> bool:
@@ -160,9 +161,9 @@ def _remove_qwen_hooks(dest_dir: Path) -> bool:
     return _remove_settings_hooks(dest_dir)
 
 
-def _configure_grok_hooks(dest_dir: Path) -> None:
+def _configure_grok_hooks(dest_dir: Path) -> bool:
     """Configure Grok CLI hooks."""
-    _configure_settings_hooks(dest_dir, GROK_HOOKS_JSON)
+    return _configure_settings_hooks(dest_dir, GROK_HOOKS_JSON)
 
 
 def _remove_grok_hooks(dest_dir: Path) -> bool:

@@ -7,6 +7,7 @@ always work — even when every other module in the package is broken.
 
 import locale
 import os
+import re
 import sys
 
 _REPO = "https://github.com/Micah123321/helloagents.git"
@@ -97,17 +98,31 @@ def _reinstall(extra_args: list[str] | None = None) -> None:
     print(_msg(f"正在从 {_REPO}@{branch} 重新安装 HelloAGENTS ...",
                f"Reinstalling HelloAGENTS from {_REPO}@{branch} ..."))
 
+    remote = subprocess.run(
+        ["git", "ls-remote", _REPO, f"refs/heads/{branch}"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    commit = remote.stdout.split(maxsplit=1)[0] if remote.returncode == 0 else ""
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", commit):
+        print(_msg("无法固定远程 commit，已取消重装。",
+                   "Could not pin the remote commit; reinstall cancelled."))
+        sys.exit(1)
+    install_url = f"git+{_REPO}@{commit}"
+
     if shutil.which("uv"):
         r = subprocess.run(
             ["uv", "tool", "install", "--from",
-             f"git+{_REPO}@{branch}", "helloagents",
+             install_url, "helloagents",
              "--force", "--no-cache"])
         if r.returncode == 0:
             print(_msg("重新安装成功。请重试您的命令。",
                        "Reinstall successful. Please retry your command."))
             return
 
-    pip_url = f"git+{_REPO}@{branch}"
+    pip_url = install_url
     r = subprocess.run(
         [sys.executable, "-m", "pip", "install",
          "--upgrade", "--force-reinstall", "--no-cache-dir", pip_url])
