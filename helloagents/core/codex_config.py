@@ -63,29 +63,26 @@ def _configure_codex_toml(dest_dir: Path) -> None:
                "  Configured project_doc_max_bytes = 131072 (prevent AGENTS.md truncation)"))
 
 
-def _get_agents_section_val(content: str, key: str) -> int | None:
-    """Get a key's integer value from a TOML ``[agents]`` section, or None."""
-    sec = re.search(r'^\[agents\]', content, re.MULTILINE)
-    if not sec:
-        return None
-    after = content[sec.end():]
-    next_sec = re.search(r'^\[[\w]', after, re.MULTILINE)
-    scope = after[:next_sec.start()] if next_sec else after
-    m = re.search(rf'^{re.escape(key)}\s*=\s*(\d+)', scope, re.MULTILINE)
-    return int(m.group(1)) if m else None
-
-
 def _cleanup_codex_agents_dotted(content: str) -> tuple[str, bool]:
-    """Remove dotted ``agents.xxx`` keys that conflict with ``[agents]`` section.
+    """Remove legacy dotted keys before creating managed TOML sections.
 
     Returns (cleaned_content, was_changed).
     """
     cleaned = content
     changed = False
-    for dotted in ('agents.max_threads', 'agents.max_depth'):
+    dotted_keys = (
+        "agents.max_threads",
+        "agents.max_depth",
+        "agents.interrupt_message",
+        "agents.max_concurrent_threads_per_session",
+        "features.multi_agent_v2.enabled",
+        "features.multi_agent_v2.tool_namespace",
+        "features.multi_agent_v2.max_concurrent_threads_per_session",
+    )
+    for dotted in dotted_keys:
         cleaned, n = re.subn(
-            rf'^{re.escape(dotted)}\s*=\s*\d+\s*\n?', '',
-            cleaned, flags=re.MULTILINE)
+            rf'^[ \t]*{re.escape(dotted)}\s*=\s*[^\r\n]*(?:\r?\n|$)',
+            '', cleaned, flags=re.MULTILINE)
         if n:
             changed = True
     if changed:
@@ -93,73 +90,107 @@ def _cleanup_codex_agents_dotted(content: str) -> tuple[str, bool]:
     return cleaned, changed
 
 
-def _ensure_agents_section(
-    content: str,
-    dotted_mt_val: int | None,
-    dotted_md_val: int | None,
-) -> tuple[str, bool, bool]:
-    """Ensure ``[agents]`` section has max_threads >= 64 and max_depth.
+def _get_section_bounds(content: str, section_name: str) -> tuple[int, int] | None:
+    """Return the exact TOML section span, excluding the next section."""
+    header = re.search(
+        rf'^\[{re.escape(section_name)}\][ \t]*(?:\r?\n|$)',
+        content,
+        re.MULTILINE,
+    )
+    if not header:
+        return None
+    after = content[header.end():]
+    next_section = re.search(r'^\[[^\r\n]+\][ \t]*(?:\r?\n|$)', after, re.MULTILINE)
+    end = header.end() + (next_section.start() if next_section else len(after))
+    return header.start(), end
 
-    Returns (content, mt_changed, md_changed).
-    """
-    mt_changed = md_changed = False
 
-    if not re.search(r'^\[agents\]', content, re.MULTILINE):
-        first_sec = re.search(r'^\[[\w]', content, re.MULTILINE)
-        mt_val = max(dotted_mt_val or 0, 64)
-        md_val = dotted_md_val if dotted_md_val is not None else 1
-        block = f"[agents]\nmax_threads = {mt_val}\nmax_depth = {md_val}\n\n"
-        if first_sec:
-            content = content[:first_sec.start()] + block + content[first_sec.start():]
-        else:
-            content = content.rstrip() + "\n\n" + block
-        return content, True, True
+def _ensure_section(content: str, section_name: str) -> tuple[str, bool]:
+    """Ensure a TOML section exists before any implicit child table."""
+    if _get_section_bounds(content, section_name) is not None:
+        return content, False
 
-    # max_threads >= 64
-    mt_val = _get_agents_section_val(content, 'max_threads')
-    if mt_val is None:
-        val = max(dotted_mt_val or 0, 64)
-        sec = re.search(r'^\[agents\]', content, re.MULTILINE)
-        content = content[:sec.end()] + f'\nmax_threads = {val}' + content[sec.end():]
-        mt_changed = True
-    elif mt_val < 64:
-        sec = re.search(r'^\[agents\]', content, re.MULTILINE)
-        after = content[sec.end():]
-        new_after = re.sub(
-            r'^(max_threads\s*=\s*)\d+', r'\g<1>64',
-            after, count=1, flags=re.MULTILINE)
-        content = content[:sec.end()] + new_after
-        mt_changed = True
+    block = f"[{section_name}]\n"
+    if "." in section_name:
+        parent_name = section_name.rsplit(".", 1)[0]
+        parent_bounds = _get_section_bounds(content, parent_name)
+        if parent_bounds:
+            insertion = parent_bounds[1]
+            before = content[:insertion].rstrip("\n")
+            after = content[insertion:].lstrip("\n")
+            suffix = f"\n\n{after}" if after else "\n"
+            return before + "\n\n" + block + suffix, True
 
-    # max_depth (add if absent, don't overwrite)
-    md_val = _get_agents_section_val(content, 'max_depth')
-    if md_val is None:
-        val = dotted_md_val if dotted_md_val is not None else 1
-        sec = re.search(r'^\[agents\]', content, re.MULTILINE)
-        content = content[:sec.end()] + f'\nmax_depth = {val}' + content[sec.end():]
-        md_changed = True
+    first_child = re.search(
+        rf'^\[{re.escape(section_name)}\.[^\r\n]+\]', content, re.MULTILINE)
+    first_section = re.search(r'^\[[^\r\n]+\]', content, re.MULTILINE)
+    insertion = first_child or first_section
+    if insertion:
+        before = content[:insertion.start()].rstrip("\n")
+        separator = "\n\n" if before else ""
+        return before + separator + block + content[insertion.start():], True
 
-    return content, mt_changed, md_changed
+    before = content.rstrip("\n")
+    separator = "\n\n" if before else ""
+    return before + separator + block, True
+
+
+def _upsert_section_key(
+    content: str, section_name: str, key: str, value: str,
+) -> tuple[str, bool]:
+    """Set one single-line key in an existing TOML section."""
+    bounds = _get_section_bounds(content, section_name)
+    if bounds is None:
+        raise ValueError(f"目标 TOML section 不存在: [{section_name}]")
+
+    section_start, section_end = bounds
+    scope = content[section_start:section_end]
+    key_match = re.search(
+        rf'^[ \t]*{re.escape(key)}\s*=\s*[^\r\n]*(?:\r?\n|$)',
+        scope,
+        re.MULTILINE,
+    )
+    new_line = f"{key} = {value}\n"
+    if key_match:
+        old_line = key_match.group(0)
+        if old_line == new_line:
+            return content, False
+        start = section_start + key_match.start()
+        end = section_start + key_match.end()
+        return content[:start] + new_line + content[end:], True
+
+    header_end = content.find("\n", section_start, section_end)
+    header_end = section_end if header_end < 0 else header_end + 1
+    return content[:header_end] + new_line + content[header_end:], True
+
+
+def _remove_section_keys(
+    content: str, section_name: str, keys: tuple[str, ...],
+) -> tuple[str, bool]:
+    """Remove all managed key lines from one exact TOML section."""
+    bounds = _get_section_bounds(content, section_name)
+    if bounds is None:
+        return content, False
+
+    section_start, section_end = bounds
+    scope = content[section_start:section_end]
+    changed = False
+    for key in keys:
+        scope, count = re.subn(
+            rf'^[ \t]*{re.escape(key)}\s*=\s*[^\r\n]*(?:\r?\n|$)',
+            "",
+            scope,
+            flags=re.MULTILINE,
+        )
+        changed = changed or bool(count)
+    return content[:section_start] + scope + content[section_end:], changed
 
 
 def _ensure_feature_bool(content: str, key: str) -> tuple[str, bool]:
     """Ensure ``[features]`` section has ``{key} = true``. Returns (content, changed)."""
-    kv = f"{key} = true"
-    feat = re.search(r'^\[features\]', content, re.MULTILINE)
-    if feat:
-        after = content[feat.end():]
-        ns = re.search(r'^\[[\w]', after, re.MULTILINE)
-        scope = after[:ns.start()] if ns else after
-        m = re.search(rf'^{re.escape(key)}\s*=\s*(\S+)', scope, re.MULTILINE)
-        if m:
-            if m.group(1) == "true":
-                return content, False
-            s = feat.end() + m.start()
-            return content[:s] + kv + content[s + len(m.group(0)):], True
-        ns2 = re.search(r'^\[[\w]', content[feat.end():], re.MULTILINE)
-        pos = (feat.end() + ns2.start()) if ns2 else len(content)
-        return content[:pos] + kv + "\n" + content[pos:], True
-    return content.rstrip() + f"\n\n[features]\n{kv}\n", True
+    content, section_added = _ensure_section(content, "features")
+    content, key_changed = _upsert_section_key(content, "features", key, "true")
+    return content, section_added or key_changed
 
 
 def _remove_feature_key(content: str, key: str) -> tuple[str, bool]:
@@ -190,53 +221,64 @@ def _remove_feature_key(content: str, key: str) -> tuple[str, bool]:
 
 
 def _configure_codex_csv_batch(dest_dir: Path) -> None:
-    """Ensure config.toml has multi-agent settings for spawn_agents_on_csv.
-
-    - ``[agents]`` max_threads >= 64, max_depth = 1
-    - ``[features]`` enable_fanout = true (CSV batch orchestration)
-    - Migrates dotted keys (``agents.max_threads``) into ``[agents]`` section
-    """
+    """Ensure the managed Codex multi-agent V2 and CSV settings are present."""
     config_path = dest_dir / "config.toml"
     content = ""
     if config_path.exists():
         content = config_path.read_text(encoding="utf-8")
     changed = False
 
-    # Harvest dotted values before removing them
-    dotted_mt = re.search(r'agents\.max_threads\s*=\s*(\d+)', content)
-    dotted_md = re.search(r'agents\.max_depth\s*=\s*(\d+)', content)
-    dotted_mt_val = int(dotted_mt.group(1)) if dotted_mt else None
-    dotted_md_val = int(dotted_md.group(1)) if dotted_md else None
-
     content, did_clean = _cleanup_codex_agents_dotted(content)
-    if did_clean:
-        changed = True
+    changed = changed or did_clean
 
-    content, mt_changed, md_changed = _ensure_agents_section(
-        content, dotted_mt_val, dotted_md_val)
-    if mt_changed or md_changed:
-        changed = True
+    content, section_added = _ensure_section(content, "agents")
+    changed = changed or section_added
+    content, old_agents_removed = _remove_section_keys(
+        content,
+        "agents",
+        ("max_threads", "max_depth", "interrupt_message"),
+    )
+    changed = changed or old_agents_removed
+    content, agents_limit_changed = _upsert_section_key(
+        content,
+        "agents",
+        "max_concurrent_threads_per_session",
+        "10",
+    )
+    changed = changed or agents_limit_changed
 
     content, fanout_added = _ensure_feature_bool(content, "enable_fanout")
-    if fanout_added:
-        changed = True
+    changed = changed or fanout_added
+
+    content, v2_section_added = _ensure_section(content, "features.multi_agent_v2")
+    changed = changed or v2_section_added
+    content, old_v2_removed = _remove_section_keys(
+        content,
+        "features.multi_agent_v2",
+        ("enabled", "tool_namespace", "max_concurrent_threads_per_session"),
+    )
+    changed = changed or old_v2_removed
+    v2_values = (
+        ("hide_spawn_agent_metadata", "true"),
+        ("expose_spawn_agent_model_overrides", "false"),
+        ("min_wait_timeout_ms", "50000"),
+        ("default_wait_timeout_ms", "120000"),
+        ("max_wait_timeout_ms", "240000"),
+    )
+    v2_changes = False
+    for key, value in v2_values:
+        content, key_changed = _upsert_section_key(
+            content, "features.multi_agent_v2", key, value)
+        v2_changes = v2_changes or key_changed
+    changed = changed or v2_changes
 
     if changed:
+        _validate_toml(content)
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(content, encoding="utf-8")
-        msgs = []
-        if mt_changed:
-            final_mt = _get_agents_section_val(content, 'max_threads') or 64
-            msgs.append(f"agents.max_threads = {final_mt}")
-        if md_changed:
-            final_md = _get_agents_section_val(content, 'max_depth') or 1
-            msgs.append(f"agents.max_depth = {final_md}")
-        if fanout_added:
-            msgs.append("enable_fanout = true")
-        if msgs:
-            print(_msg(
-                f"  已配置多代理: {', '.join(msgs)}",
-                f"  Configured multi-agent: {', '.join(msgs)}"))
+        print(_msg(
+            "  已配置多代理: [agents] 并发上限=10, [features.multi_agent_v2] 等待与派生策略已更新",
+            "  Configured multi-agent: [agents] concurrency=10 and [features.multi_agent_v2] wait/spawn policy updated"))
 
 
 # ---------------------------------------------------------------------------

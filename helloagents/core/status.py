@@ -116,25 +116,45 @@ def _show_codex_cli_details(cli_dir: Path) -> None:
                        "    ⚠ notify not configured, reinstall recommended"))
         # --- multi-agent config check ---
         ma_items = []
-        # Check max_threads: dotted form OR scoped within [agents] section
+        # Check the managed concurrency key within [agents].
         agents_sec = re.search(r'^\[agents\]', ct_text, re.MULTILINE)
         agents_scope = ""
         if agents_sec:
             after_agents = ct_text[agents_sec.end():]
-            next_sec_a = re.search(r'^\[[\w]', after_agents, re.MULTILINE)
+            next_sec_a = re.search(r'^\[[^\r\n]+\]', after_agents, re.MULTILINE)
             agents_scope = after_agents[:next_sec_a.start()] if next_sec_a else after_agents
-        has_mt = (re.search(r'agents\.max_threads\s*=', ct_text)
-                  or (agents_scope and re.search(r'^max_threads\s*=', agents_scope, re.MULTILINE)))
-        if has_mt:
-            ma_items.append("agents.max_threads")
-        has_md = (re.search(r'agents\.max_depth\s*=', ct_text)
-                  or (agents_scope and re.search(r'^max_depth\s*=', agents_scope, re.MULTILINE)))
-        if has_md:
-            ma_items.append("agents.max_depth")
+        if agents_scope and re.search(
+                r'^max_concurrent_threads_per_session\s*=\s*10',
+                agents_scope,
+                re.MULTILINE,
+        ):
+            ma_items.append("agents.max_concurrent_threads_per_session")
+        v2_sec = re.search(r'^\[features\.multi_agent_v2\]', ct_text, re.MULTILINE)
+        v2_scope = ""
+        if v2_sec:
+            after_v2 = ct_text[v2_sec.end():]
+            next_sec_v2 = re.search(r'^\[[^\r\n]+\]', after_v2, re.MULTILINE)
+            v2_scope = after_v2[:next_sec_v2.start()] if next_sec_v2 else after_v2
+        v2_values = {
+            "hide_spawn_agent_metadata": "true",
+            "expose_spawn_agent_model_overrides": "false",
+            "min_wait_timeout_ms": "50000",
+            "default_wait_timeout_ms": "120000",
+            "max_wait_timeout_ms": "240000",
+        }
+        if v2_scope and all(
+                re.search(
+                    rf'^{re.escape(key)}\s*=\s*{re.escape(value)}\s*$',
+                    v2_scope,
+                    re.MULTILINE,
+                )
+                for key, value in v2_values.items()
+        ):
+            ma_items.append("features.multi_agent_v2")
         feat_m = re.search(r'^\[features\]', ct_text, re.MULTILINE)
         if feat_m:
             after_feat = ct_text[feat_m.end():]
-            next_sec_f = re.search(r'^\[[\w]', after_feat, re.MULTILINE)
+            next_sec_f = re.search(r'^\[[^\r\n]+\]', after_feat, re.MULTILINE)
             feat_scope = after_feat[:next_sec_f.start()] if next_sec_f else after_feat
             if re.search(r'^enable_fanout\s*=\s*true', feat_scope, re.MULTILINE):
                 ma_items.append("enable_fanout")

@@ -12,12 +12,89 @@ except ModuleNotFoundError:  # Python 3.10 compatibility
 
 from helloagents.core.codex_config import (
     _CODEX_DEVELOPER_INSTRUCTIONS,
+    _configure_codex_csv_batch,
     _configure_codex_developer_instructions,
     _remove_codex_developer_instructions,
 )
 
 
 class CodexConfigTests(unittest.TestCase):
+    def test_configure_codex_multi_agent_settings_migrates_old_sections(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest_dir = Path(tmp)
+            config_path = dest_dir / "config.toml"
+            config_path.write_text(
+                "\n".join([
+                    "[agents]",
+                    "max_threads = 64",
+                    "max_depth = 1",
+                    'interrupt_message = "legacy"',
+                    "max_concurrent_threads_per_session = 2",
+                    'preserved = "agents-value"',
+                    "",
+                    "[agents.worker]",
+                    "max_depth = 9",
+                    "",
+                    "[features]",
+                    "enable_fanout = false",
+                    'preserved = "features-value"',
+                    "",
+                    "[features.multi_agent_v2]",
+                    "enabled = true",
+                    'tool_namespace = "legacy"',
+                    "max_concurrent_threads_per_session = 3",
+                    'preserved = "v2-value"',
+                    "",
+                ]),
+                encoding="utf-8",
+            )
+
+            _configure_codex_csv_batch(dest_dir)
+
+            config = config_path.read_text(encoding="utf-8")
+            self.assertNotIn("max_threads =", config.split("[agents.worker]", 1)[0])
+            self.assertNotIn("max_depth = 1", config.split("[agents.worker]", 1)[0])
+            self.assertNotIn("interrupt_message =", config.split("[agents.worker]", 1)[0])
+            self.assertIn("max_depth = 9", config)
+            self.assertNotIn("enabled =", config.split("[features.multi_agent_v2]", 1)[1])
+            self.assertNotIn("tool_namespace =", config)
+            self.assertIn('preserved = "agents-value"', config)
+            self.assertIn('preserved = "features-value"', config)
+            self.assertIn('preserved = "v2-value"', config)
+
+            if tomllib is not None:
+                parsed = tomllib.loads(config)
+                self.assertEqual(parsed["agents"]["max_concurrent_threads_per_session"], 10)
+                self.assertTrue(parsed["features"]["enable_fanout"])
+                self.assertEqual(
+                    parsed["features"]["multi_agent_v2"],
+                    {
+                        "hide_spawn_agent_metadata": True,
+                        "expose_spawn_agent_model_overrides": False,
+                        "min_wait_timeout_ms": 50000,
+                        "default_wait_timeout_ms": 120000,
+                        "max_wait_timeout_ms": 240000,
+                        "preserved": "v2-value",
+                    },
+                )
+
+    def test_configure_codex_multi_agent_settings_creates_missing_sections_and_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest_dir = Path(tmp)
+
+            _configure_codex_csv_batch(dest_dir)
+            first = (dest_dir / "config.toml").read_text(encoding="utf-8")
+            _configure_codex_csv_batch(dest_dir)
+            second = (dest_dir / "config.toml").read_text(encoding="utf-8")
+
+            self.assertEqual(first, second)
+            self.assertIn("[agents]", first)
+            self.assertIn("[features.multi_agent_v2]", first)
+            self.assertIn("max_concurrent_threads_per_session = 10", first)
+            self.assertIn("hide_spawn_agent_metadata = true", first)
+            if tomllib is not None:
+                tomllib.loads(first)
+
     def assert_codex_spawn_compatibility_guidance(self, text):
         self.assertIn("agent_type", text)
         self.assertIn("fork_context", text)

@@ -24,6 +24,15 @@ def read_text(relative_path: str) -> str:
 
 
 class SubagentRuleTests(unittest.TestCase):
+    def test_project_agents_contains_persistent_subagent_usage_contract(self):
+        agents = read_text("AGENTS.md")
+        self.assertIn("## 子代理使用", agents)
+        self.assertIn("最多并行 10 个子代理", agents)
+        self.assertIn('fork_turns = "none"', agents)
+        self.assertIn("每个子代理只用一轮", agents)
+        self.assertIn("只做探索、检索以及核验", agents)
+        self.assertIn("只有 `FINAL_ANSWER` 或 completed 状态才算终态", agents)
+
     def test_r2_defaults_to_delegated_without_execution_mode_menu(self):
         agents = read_text("AGENTS.md")
         skill = read_text("SKILL.md")

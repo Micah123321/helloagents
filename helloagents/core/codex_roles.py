@@ -10,6 +10,38 @@ _READ_ONLY_ROLES = {"explorer", "monitor", "reviewer", "brainstormer"}
 _ROLE_CONFIG_DIR = "agents"
 _ROLE_CONFIG_PREFIX = "helloagents-readonly"
 
+_DEFAULT_AGENT_CONFIG = '''name = "default"
+
+description = "One-shot read-only scout locked to gpt-5.6-luna with medium reasoning."
+
+model = "gpt-5.6-luna"
+
+model_reasoning_effort = "medium"
+
+developer_instructions = """
+你是通用子代理，是主代理派出去的一次性探子。你只做探索、检索、核验：不改动任何东西，不做方案取舍或者最终判断——那些是主代理的事。
+不创建、修改、删除任何文件，不执行任何会改变仓库或者系统状态的命令。
+不派生、调用或者请求新的子代理；任务若是需要进一步拆分，把拆分建议写进最终返回。
+
+你交回给主代理的东西：
+- 你的产出直接交给主代理、是它据以行动的数据，并非给人看的。密而不水，不寒暄、不复述过程、不下客套结论。
+- 第一行只写一个词的状态：complete / partial / blocked。这用于向主代理说明本次完成情况。
+- 给证据，不给包装：关键处附上 `file:line`、符号名、必要的逐字原文。主代理会靠这些出处来抽查你、省去重读原文，所以出处必须准、且足以让它核验。
+- 把「看到的事实」以及「你的推断」分开，存疑的明确标注——别把猜测写成事实。
+- 报「没查到 / 不存在」这类否定结论时，写明实际查过的范围和搜索式——否则主代理分不清「全仓检索后的否定」和「只看了两个文件的沉默」。
+- 压缩体量，但承重的精确信息（确切的名字、签名、取值、路径）一字不改地留住，别在转述里磨没了。
+
+你怎么工作：
+- 你只有一轮、任务是自包含的：没有追问的机会，别反问；用这一轮把任务范围查到位、尽力答全。
+- 只发一次 FINAL_ANSWER，非必要禁止 MESSAGE：执行期间不调用 send_message，不向主代理发送任何进度、部分结果或者状态消息。无论结果是 complete、partial 还是 blocked，你与主代理的全部通信一般情况下都只有任务结束时那唯一一次 FINAL_ANSWER。
+- 遇到阻塞、错误、权限限制或者无法完成：直接结束本轮，在最终返回里说明原因、状态标 blocked，不先发中间消息。
+- 答不全就如实交代「查到了什么、还有什么没覆盖、哪里存疑或者矛盾」。宁可显式报「没查到 / 没覆盖」，也别用含糊的话糊弄过去——你悄悄漏掉的，主代理无从复核。
+"""
+
+[features]
+image_generation = false
+'''
+
 
 # ---------------------------------------------------------------------------
 # TOML section helpers (used by role management)
@@ -74,6 +106,16 @@ def _write_readonly_role_configs(dest_dir: Path) -> list[str]:
         config_path.write_text(content, encoding="utf-8")
         changed.append(role)
     return changed
+
+
+def _write_default_agent_config(dest_dir: Path) -> bool:
+    """Replace the managed one-shot default scout configuration."""
+    config_path = dest_dir / _ROLE_CONFIG_DIR / "default.toml"
+    if config_path.exists() and config_path.read_text(encoding="utf-8") == _DEFAULT_AGENT_CONFIG:
+        return False
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(_DEFAULT_AGENT_CONFIG, encoding="utf-8")
+    return True
 
 
 def _get_section_scope(content: str, section_name: str) -> tuple[int, int] | None:
@@ -249,6 +291,7 @@ def _configure_codex_agent_roles(dest_dir: Path) -> None:
             created.append(role)
 
     config_updates = _write_readonly_role_configs(dest_dir)
+    default_updated = _write_default_agent_config(dest_dir)
 
     if created or updated:
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -269,12 +312,20 @@ def _configure_codex_agent_roles(dest_dir: Path) -> None:
             print(_msg(
                 f"  已配置只读子代理权限: {', '.join(config_updates)}",
                 f"  Configured read-only agent permissions: {', '.join(config_updates)}"))
+        if default_updated:
+            print(_msg(
+                "  已写入默认只读探子: agents/default.toml",
+                "  Wrote default read-only scout: agents/default.toml"))
     else:
         if config_updates:
             print(_msg(
                 f"  已配置只读子代理权限: {', '.join(config_updates)}",
                 f"  Configured read-only agent permissions: {', '.join(config_updates)}"))
-        else:
+        if default_updated:
+            print(_msg(
+                "  已写入默认只读探子: agents/default.toml",
+                "  Wrote default read-only scout: agents/default.toml"))
+        if not config_updates and not default_updated:
             print(_msg("  子代理角色配置已是最新",
                         "  Agent roles config is up to date"))
 

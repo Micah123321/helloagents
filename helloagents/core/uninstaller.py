@@ -201,7 +201,7 @@ def _uninstall_grok_extras(dest_dir: Path) -> list[str]:
 
 
 def _uninstall_codex_extras(dest_dir: Path) -> list[str]:
-    """Remove Codex CLI specific items (notify, developer_instructions, dotted keys)."""
+    """Remove Codex CLI specific items while preserving user-owned settings."""
     removed = []
     try:
         if _remove_codex_notify(dest_dir):
@@ -251,18 +251,19 @@ def _uninstall_codex_extras(dest_dir: Path) -> list[str]:
     except Exception as e:
         print(_msg(f"  ⚠ 清理 enable_fanout 时出错: {e}",
                    f"  ⚠ Error cleaning enable_fanout: {e}"))
-    # Note: The following config keys are intentionally preserved during uninstall:
+    # Note: the following config keys are intentionally preserved during uninstall:
     # - project_doc_max_bytes: May be used by other project documentation tools
-    # - agents.max_threads / agents.max_depth: Generic multi-agent settings
+    # - [agents] and [features.multi_agent_v2]: Codex multi-agent settings may be
+    #   shared with other integrations; only the managed role files are removed.
     # - [memories]: Codex native memory system (not HelloAGENTS-exclusive)
     # These keys correspond to installer functions:
     # - _configure_codex_toml() → project_doc_max_bytes (preserved)
-    # - _configure_codex_csv_batch() → agents.max_threads/max_depth (preserved)
+    # - _configure_codex_csv_batch() → multi-agent settings (preserved)
     # - [memories] section is Codex-native, not created by HelloAGENTS (preserved)
     # Users can manually remove these if desired.
     print(_msg(
-        "  ℹ config.toml 中的 project_doc_max_bytes / agents.max_threads / agents.max_depth / memories 配置已保留（可能被其他工具使用）。",
-        "  ℹ project_doc_max_bytes / agents.max_threads / agents.max_depth / memories kept in config.toml (may be used by other tools)."))
+        "  ℹ config.toml 中的 project_doc_max_bytes / 多代理区块 / memories 配置已保留（可能被其他工具使用）。",
+        "  ℹ project_doc_max_bytes / multi-agent sections / memories kept in config.toml (may be used by other tools)."))
     return removed
 
 

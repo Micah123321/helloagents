@@ -10,6 +10,7 @@ except ModuleNotFoundError:  # Python 3.10 compatibility
     tomllib = None
 
 from helloagents.core.codex_roles import (
+    _DEFAULT_AGENT_CONFIG,
     _configure_codex_agent_roles,
     _remove_codex_agent_roles,
 )
@@ -41,6 +42,32 @@ class CodexRoleTests(unittest.TestCase):
             if tomllib is not None:
                 parsed = tomllib.loads(content)
                 self.assertEqual(parsed["sandbox_mode"], "read-only")
+
+    def test_configure_writes_and_replaces_managed_default_agent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest_dir = Path(tmp)
+            default_path = dest_dir / "agents" / "default.toml"
+            default_path.parent.mkdir(parents=True)
+            default_path.write_text('model = "user-model"\n', encoding="utf-8")
+
+            _configure_codex_agent_roles(dest_dir)
+            first = default_path.read_text(encoding="utf-8")
+            _configure_codex_agent_roles(dest_dir)
+            second = default_path.read_text(encoding="utf-8")
+
+            self.assertEqual(first, _DEFAULT_AGENT_CONFIG)
+            self.assertEqual(second, _DEFAULT_AGENT_CONFIG)
+            self.assertIn('description = "One-shot read-only scout locked to gpt-5.6-luna with medium reasoning."', first)
+            self.assertIn('model = "gpt-5.6-luna"', first)
+            self.assertIn('model_reasoning_effort = "medium"', first)
+            self.assertIn("只做探索、检索、核验", first)
+            self.assertIn("[features]", first)
+            if tomllib is not None:
+                parsed = tomllib.loads(first)
+                self.assertEqual(parsed["name"], "default")
+                self.assertEqual(parsed["model"], "gpt-5.6-luna")
+                self.assertEqual(parsed["model_reasoning_effort"], "medium")
+                self.assertFalse(parsed["features"]["image_generation"])
 
     def test_configure_does_not_write_fork_context_to_codex_role_configs(self):
         with tempfile.TemporaryDirectory() as tmp:
