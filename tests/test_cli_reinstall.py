@@ -20,6 +20,8 @@ class CliReinstallTests(unittest.TestCase):
 
         with patch("shutil.which", return_value="uv"), \
              patch("subprocess.run", run), \
+             patch("sys.prefix", "/usr"), \
+             patch("sys.base_prefix", "/usr"), \
              patch("sys.stdout", io.StringIO()):
             cli._reinstall([])
 
@@ -36,6 +38,8 @@ class CliReinstallTests(unittest.TestCase):
 
         with patch("shutil.which", return_value="uv"), \
              patch("subprocess.run", run), \
+             patch("sys.prefix", "/usr"), \
+             patch("sys.base_prefix", "/usr"), \
              patch("sys.stdout", io.StringIO()):
             cli._reinstall(["main"])
 
@@ -48,11 +52,31 @@ class CliReinstallTests(unittest.TestCase):
 
         with patch("shutil.which", return_value="uv"), \
              patch("subprocess.run", run), \
+             patch("sys.prefix", "/usr"), \
+             patch("sys.base_prefix", "/usr"), \
              patch("sys.stdout", io.StringIO()), \
              self.assertRaises(SystemExit):
             cli._reinstall(["main"])
 
         self.assertEqual(run.call_count, 1)
+
+    def test_reinstall_uses_uv_pip_inside_venv(self):
+        commit = "c" * 40
+        run = Mock(side_effect=[_Result(0, f"{commit}\trefs/heads/dev/2.3.8\n"), _Result(0)])
+
+        with patch("shutil.which", return_value="uv"), \
+             patch("subprocess.run", run), \
+             patch("sys.prefix", "/venv"), \
+             patch("sys.base_prefix", "/usr"), \
+             patch("sys.stdout", io.StringIO()):
+            cli._reinstall([])
+
+        self.assertEqual(run.call_count, 2)
+        cmd = run.call_args_list[1].args[0]
+        self.assertEqual(cmd[:3], ["uv", "pip", "install"])
+        self.assertIn("--upgrade", cmd)
+        self.assertIn("--force-reinstall", cmd)
+        self.assertIn("--no-cache-dir", cmd)
 
 
 if __name__ == "__main__":

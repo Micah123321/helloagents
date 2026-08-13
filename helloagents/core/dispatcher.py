@@ -232,8 +232,12 @@ def dispatch(args: list[str]) -> None:
         from .updater import _post_update_sync
         branch = args[1] if len(args) >= 2 else None
         total = int(args[2]) if len(args) >= 3 else None
-        if not _post_update_sync(branch, total):
-            sys.exit(1)
+        # Post-update sync is best-effort: target-level failures are reported
+        # in the sync summary but do NOT trigger a hard exit.  The package
+        # update itself succeeded — a reinstall (which would install to the
+        # tool environment, not the venv) would not fix individual target
+        # failures and would leave the venv with a stale version.
+        _post_update_sync(branch, total)
     elif cmd == "clean":
         from .status import clean
         clean()

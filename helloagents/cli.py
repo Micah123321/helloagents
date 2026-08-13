@@ -84,6 +84,9 @@ def _reinstall(extra_args: list[str] | None = None) -> None:
     import subprocess
     import shutil
 
+    # Detect whether we're inside a virtual environment
+    in_venv = sys.prefix != sys.base_prefix
+
     # Extract branch from extra args (e.g. helloagents update --branch beta)
     branch = _DEFAULT_BRANCH
     if extra_args:
@@ -112,6 +115,33 @@ def _reinstall(extra_args: list[str] | None = None) -> None:
         sys.exit(1)
     install_url = f"git+{_REPO}@{commit}"
 
+    if in_venv:
+        # Inside a virtual environment → install into the venv, not the tool env
+        if shutil.which("uv"):
+            r = subprocess.run(
+                ["uv", "pip", "install", "--upgrade",
+                 "--force-reinstall", "--no-cache-dir", install_url])
+            if r.returncode == 0:
+                print(_msg("重新安装成功。请重试您的命令。",
+                           "Reinstall successful. Please retry your command."))
+                return
+        pip_url = install_url
+        r = subprocess.run(
+            [sys.executable, "-m", "pip", "install",
+             "--upgrade", "--force-reinstall", "--no-cache-dir", pip_url])
+        if r.returncode == 0:
+            print(_msg("重新安装成功。请重试您的命令。",
+                       "Reinstall successful. Please retry your command."))
+        else:
+            print(_msg(
+                "重新安装失败。请手动执行:\n"
+                f"  pip install --upgrade --force-reinstall --no-cache-dir {pip_url}",
+                "Reinstall failed. Try manually:\n"
+                f"  pip install --upgrade --force-reinstall --no-cache-dir {pip_url}",
+            ))
+        return
+
+    # Not in a venv → install to the tool environment (default behavior)
     if shutil.which("uv"):
         r = subprocess.run(
             ["uv", "tool", "install", "--from",
