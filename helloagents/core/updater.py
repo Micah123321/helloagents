@@ -247,6 +247,7 @@ def update(switch_branch: str | None = None) -> None:
     install_url = _build_git_install_url(repo_url, pinned_commit)
     updated = False
     method = _detect_install_method()
+    in_venv = sys.prefix != sys.base_prefix
     print(_msg("  正在从远程仓库下载并安装，请稍候...",
                "  Downloading and installing from remote, please wait..."))
 
@@ -257,10 +258,17 @@ def update(switch_branch: str | None = None) -> None:
     # Try uv first
     uv_failed_text = ""  # captured for lock detection if uv errors
     if method == "uv":
-        uv_cmd = [
-            "uv", "tool", "install", "--from", install_url,
-            "helloagents", "--force", "--no-cache",
-        ]
+        # Inside a venv: install into the venv, not the tool environment
+        if in_venv:
+            uv_cmd = [
+                "uv", "pip", "install", "--upgrade",
+                "--force-reinstall", "--no-cache-dir", install_url,
+            ]
+        else:
+            uv_cmd = [
+                "uv", "tool", "install", "--from", install_url,
+                "helloagents", "--force", "--no-cache",
+            ]
         try:
             result = subprocess.run(uv_cmd, capture_output=True, text=True,
                                     encoding="utf-8", errors="replace")
@@ -273,16 +281,18 @@ def update(switch_branch: str | None = None) -> None:
                 stderr = result.stderr.strip()
                 combined = f"{stdout}\n{stderr}"
                 uv_failed_text = combined
-                # Lock failure (entrypoint or tool-env directory) → defer to
-                # post-exit so the running exe stops blocking the reinstall.
-                if sys.platform == "win32" and (
-                        _is_windows_entrypoint_lock_error(combined)
-                        or _uv_toolenv_lock_error(combined)):
-                    if _attempt_deferred_reinstall(
-                            uv_cmd, branch, total_steps, pre_targets, bak):
-                        return
-                    # deferred scheduling itself failed → fall through to pip
-                    # fallback as a last resort (still tries to recover)
+                if not in_venv:
+                    # Lock failure (entrypoint or tool-env directory) → defer to
+                    # post-exit so the running exe stops blocking the reinstall.
+                    # Not applicable when installing into a venv.
+                    if sys.platform == "win32" and (
+                            _is_windows_entrypoint_lock_error(combined)
+                            or _uv_toolenv_lock_error(combined)):
+                        if _attempt_deferred_reinstall(
+                                uv_cmd, branch, total_steps, pre_targets, bak):
+                            return
+                        # deferred scheduling itself failed → fall through to pip
+                        # fallback as a last resort (still tries to recover)
                 if stderr:
                     print(f"  uv error: {stderr}")
                 elif stdout:
@@ -292,10 +302,11 @@ def update(switch_branch: str | None = None) -> None:
                        "  Warning: uv not found, falling back to pip."))
             allow_pip_fallback = True
 
-    # Fallback to pip (covers: uv not found, uv true-failure, uv non-Windows)
+    # Fallback to pip (covers: uv not found, uv true-failure, uv non-Windows,
+    # and venv mode where uv pip install failed).
     # On Windows, a uv lock failure that couldn't be deferred is retried via pip;
     # pip's own lock failure is handled by its deferred branch below.
-    if not updated and allow_pip_fallback:
+    if not updated and (allow_pip_fallback or in_venv):
         pip_cmd = [sys.executable, "-m", "pip", "install", "--upgrade",
                    "--no-cache-dir", install_url]
         try:
