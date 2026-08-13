@@ -153,8 +153,9 @@ One rule set works across Claude Code, Codex CLI, OpenCode, Gemini CLI, Qwen CLI
 | Gemini CLI | Built-in tool calls | Fallback to sequential execution |
 | Qwen CLI | Built-in tool calls | Fallback to sequential execution |
 | Grok CLI (Experimental) | Built-in tool calls | Fallback to sequential execution |
+| **DSH (DeepSeek Harness)** | subagent / subagent_fork / workflow (continuable background) | subagent parallel scheduling, workflow large-scale orchestration |
 
-Additionally, HelloAGENTS provides: **five-dimension routing scoring** (action need, target clarity, decision scope, impact range, EHRB risk) to automatically determine processing depth for each input; **6 CLI targets** (Claude Code / Codex CLI / OpenCode / Gemini CLI / Qwen CLI / Grok CLI) with one rule set across all; **Hooks integration** (Claude Code 11 lifecycle hooks + Codex CLI notify hook + Gemini CLI 6 hooks + Grok CLI 3 hooks) with automatic graceful degradation when unavailable.
+Additionally, HelloAGENTS provides: **five-dimension routing scoring** (action need, target clarity, decision scope, impact range, EHRB risk) to automatically determine processing depth for each input; **7 CLI targets** (Claude Code / Codex CLI / OpenCode / Gemini CLI / Qwen CLI / Grok CLI / DSH) with one rule set across all; **Hooks integration** (Claude Code 11 lifecycle hooks + Codex CLI notify hook + Gemini CLI 6 hooks + Grok CLI 3 hooks) with automatic graceful degradation when unavailable.
 
 ### CLI Compatibility Quick Reference
 
@@ -188,6 +189,7 @@ Additionally, HelloAGENTS provides: **five-dimension routing scoring** (action n
 
 **Other CLIs:**
 - OpenCode supports Task tool with primary agents (build/plan) and subagents (general/explore)
+- DSH (DeepSeek Harness) supports subagent / subagent_fork / workflow subagent channels
 - Gemini/Qwen/Grok use sequential execution fallback
 - All features work with graceful degradation
 - Hooks may not be available on all platforms
@@ -686,7 +688,7 @@ A: Both. The CLI manages installation and updates, while the workflow behavior c
 
 **Q: Which target should I install?**
 
-A: Choose the CLI you're actively using: `codex` (Codex CLI), `claude` (Claude Code), `gemini` (Gemini CLI), `qwen` (Qwen CLI), `grok` (Grok CLI), or `opencode` (OpenCode). You can install to multiple targets with `helloagents install --all`. See [CLI Compatibility Quick Reference](#cli-compatibility-quick-reference) for details.
+A: Choose the CLI you're actively using: `codex` (Codex CLI), `claude` (Claude Code), `gemini` (Gemini CLI), `qwen` (Qwen CLI), `grok` (Grok CLI), `opencode` (OpenCode), or `dsh` (DeepSeek Harness). You can install to multiple targets with `helloagents install --all`. See [CLI Compatibility Quick Reference](#cli-compatibility-quick-reference) for details.
 
 **Q: What if a rules file already exists?**
 

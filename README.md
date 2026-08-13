@@ -155,8 +155,9 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
 | Gemini CLI | 内置工具调用 | 降级为顺序执行 |
 | Qwen CLI | 内置工具调用 | 降级为顺序执行 |
 | Grok CLI（实验性）| 内置工具调用 | 降级为顺序执行 |
+| **DSH（DeepSeek Harness）** | subagent / subagent_fork / workflow（continuable 后台） | subagent 并行调度，workflow 大规模编排 |
 
-此外，HelloAGENTS 还提供：**五维路由评分**（行动需求、目标可定位性、决策需求、影响范围、EHRB 风险），用于决定每条输入走 R0/R1/R2 哪个处理级别；**6 个 CLI 目标**共用同一套规则；**Hooks 集成**覆盖 Claude Code、Codex CLI、Gemini CLI 和 Grok CLI，无 Hooks 环境按规则降级执行。
+此外，HelloAGENTS 还提供：**五维路由评分**（行动需求、目标可定位性、决策需求、影响范围、EHRB 风险），用于决定每条输入走 R0/R1/R2 哪个处理级别；**7 个 CLI 目标**共用同一套规则；**Hooks 集成**覆盖 Claude Code、Codex CLI、Gemini CLI 和 Grok CLI，无 Hooks 环境按规则降级执行。
 
 ### CLI 兼容性速查表
 
@@ -191,6 +192,7 @@ L1 项目知识库（从代码自动同步的结构化文档），上下文跨�
 
 **其他 CLI：**
 - OpenCode 支持 Task tool，含主代理（build/plan）和子代理（general/explore）
+- DSH（DeepSeek Harness）支持 subagent / subagent_fork / workflow 子代理通道
 - Gemini/Qwen/Grok 使用顺序执行降级
 - 不支持的功能会自动降级
 - Hooks 可能在部分平台上不可用
@@ -697,7 +699,7 @@ CHANGELOG 使用语义版本号（X.Y.Z），版本来源优先级：用户指�
 
 **问：应该安装哪个目标？**
 
-答：选择你正在使用的 CLI：`codex`（Codex CLI）、`claude`（Claude Code）、`gemini`（Gemini CLI）、`qwen`（Qwen CLI）、`grok`（Grok CLI）或 `opencode`（OpenCode）。可以用 `helloagents install --all` 安装到所有目标。详见[CLI 兼容性速查表](#cli-兼容性速查表)。
+答：选择你正在使用的 CLI：`codex`（Codex CLI）、`claude`（Claude Code）、`gemini`（Gemini CLI）、`qwen`（Qwen CLI）、`grok`（Grok CLI）、`opencode`（OpenCode）或 `dsh`（DeepSeek Harness）。可以用 `helloagents install --all` 安装到所有目标。详见[CLI 兼容性速查表](#cli-兼容性速查表)。
 
 **问：如果规则文件已存在怎么办？**
 

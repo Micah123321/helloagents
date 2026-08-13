@@ -30,6 +30,7 @@ CLI_TARGETS = {
     "qwen": {"dir": ".qwen", "rules_file": "QWEN.md"},
     "grok": {"dir": ".grok", "rules_file": "GROK.md", "status": "experimental"},
     "opencode": {"dir": ".config/opencode", "rules_file": "AGENTS.md"},
+    "dsh": {"dir": ".dsh", "rules_file": "AGENTS.md", "mode": "preset"},
 }
 
 PLUGIN_DIR_NAME = "helloagents"
@@ -223,6 +224,30 @@ def get_helloagents_module_path() -> Path:
 
 
 # ---------------------------------------------------------------------------
+# DSH (DeepSeek Harness) helpers
+# ---------------------------------------------------------------------------
+
+def _dsh_home() -> Path:
+    """Return the DSH home directory (*DSH_HOME* env or ``~/.dsh``)."""
+    env = os.environ.get("DSH_HOME")
+    if env and env.strip():
+        return Path(env.strip())
+    return Path.home() / ".dsh"
+
+
+def cli_dir_for(name: str) -> Path:
+    """Return the config directory for a given CLI target by name.
+
+    For DSH this returns ``$DSH_HOME`` (or ``~/.dsh``); for all other
+    targets it returns ``~/{config_dir}``.
+    """
+    cfg = CLI_TARGETS[name]
+    if name == "dsh":
+        return _dsh_home()
+    return Path.home() / cfg["dir"]
+
+
+# ---------------------------------------------------------------------------
 # Shared hooks helpers (used by claude_config.py and settings_hooks.py)
 # ---------------------------------------------------------------------------
 
@@ -302,8 +327,8 @@ def resolve_hook_placeholders(hooks: dict, scripts_dir: str) -> dict:
 def detect_installed_clis() -> list[str]:
     """Detect which CLI config directories exist."""
     installed = []
-    for name, config in CLI_TARGETS.items():
-        cli_dir = Path.home() / config["dir"]
+    for name in CLI_TARGETS:
+        cli_dir = cli_dir_for(name)
         if cli_dir.exists():
             installed.append(name)
     return installed
@@ -318,7 +343,15 @@ def _detect_installed_targets() -> list[str]:
     installed = []
     _module_dirs = ("functions", "stages", "scripts")
     for name, config in CLI_TARGETS.items():
-        cli_dir = Path.home() / config["dir"]
+        cli_dir = cli_dir_for(name)
+        if name == "dsh":
+            preset_dir = cli_dir / ".agent-presets" / PLUGIN_DIR_NAME
+            has_composition = (preset_dir / "agent.cordis.yml").is_file()
+            has_bootstrap = (preset_dir / "bootstrap.md").is_file() and (preset_dir / "bootstrap.md").stat().st_size > 0
+            has_skill = (preset_dir / "skills" / "helloagents" / "SKILL.md").is_file()
+            if has_composition and has_bootstrap and has_skill:
+                installed.append(name)
+            continue
         plugin_dir = cli_dir / PLUGIN_DIR_NAME
         rules_file = cli_dir / config["rules_file"]
         has_modules = any((plugin_dir / d).is_dir() for d in _module_dirs)

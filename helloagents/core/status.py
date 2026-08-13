@@ -9,7 +9,7 @@ from importlib.metadata import version as get_version
 from .._common import (
     _msg, _header,
     CLI_TARGETS, PLUGIN_DIR_NAME,
-    _detect_installed_targets,
+    _detect_installed_targets, cli_dir_for,
     is_helloagents_hook as _is_helloagents_hook,
 )
 from .claude_config import _get_helloagents_permissions
@@ -238,7 +238,13 @@ def status() -> None:
 
     _module_dirs = ("functions", "stages", "scripts")
     for name, config in CLI_TARGETS.items():
-        cli_dir = Path.home() / config["dir"]
+        cli_dir = cli_dir_for(name)
+
+        # ── DSH (preset-mode) target ──
+        if name == "dsh":
+            _show_dsh_status(cli_dir)
+            continue
+
         plugin_dir = cli_dir / PLUGIN_DIR_NAME
         rules_file = cli_dir / config["rules_file"]
         skill_file = cli_dir / "skills" / "helloagents" / "SKILL.md"
@@ -279,6 +285,43 @@ def status() -> None:
 
     _show_wsl_hint()
     print()
+
+
+# ---------------------------------------------------------------------------
+# DSH status helper
+# ---------------------------------------------------------------------------
+
+def _show_dsh_status(dsh_home: Path) -> None:
+    """Show status row for the DSH (preset-mode) target."""
+    from .dsh_config import _preset_dir, _show_dsh_details
+
+    preset_dir = _preset_dir(dsh_home)
+    dsh_exists = dsh_home.exists()
+    has_composition = (preset_dir / "agent.cordis.yml").is_file()
+    has_bootstrap = (preset_dir / "bootstrap.md").is_file() and (preset_dir / "bootstrap.md").stat().st_size > 0
+    has_skill = (preset_dir / "skills" / "helloagents" / "SKILL.md").is_file()
+
+    if not dsh_exists:
+        mark = "·"
+        status_str = _msg("未检测到该工具", "tool not found")
+    elif has_composition and has_bootstrap and has_skill:
+        mark = "✓"
+        status_str = _msg("已安装 HelloAGENTS", "HelloAGENTS installed")
+    elif has_composition and has_bootstrap:
+        mark = "!"
+        status_str = _msg("已安装但缺少 SKILL.md，建议重新安装",
+                          "installed but SKILL.md missing, reinstall recommended")
+    elif has_composition or has_bootstrap or has_skill:
+        mark = "!"
+        status_str = _msg("安装不完整", "partial install")
+    else:
+        mark = "·"
+        status_str = _msg("未安装 HelloAGENTS", "HelloAGENTS not installed")
+
+    print(f"  {mark} dsh        {status_str}")
+
+    if has_composition and has_bootstrap:
+        _show_dsh_details(dsh_home)
 
 
 # ---------------------------------------------------------------------------

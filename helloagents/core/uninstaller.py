@@ -9,7 +9,7 @@ from .._common import (
     _msg,
     CLI_TARGETS, PLUGIN_DIR_NAME, HELLOAGENTS_MARKER,
     is_helloagents_file, clean_skills_dir, cleanup_empty_parent,
-    _detect_installed_targets, _detect_install_method,
+    _detect_installed_targets, _detect_install_method, cli_dir_for,
     get_helloagents_module_path,
 )
 from .codex_config import _cleanup_codex_agents_dotted, _remove_codex_notify
@@ -287,8 +287,19 @@ def uninstall(target: str, show_package_hint: bool = True) -> bool:
         return False
 
     config = CLI_TARGETS[target]
-    dest_dir = Path.home() / config["dir"]
+    dest_dir = cli_dir_for(target)
     rules_file = config["rules_file"]
+
+    # ── Preset-mode target (DSH) ──
+    if config.get("mode") == "preset":
+        from .dsh_config import _uninstall_dsh
+        print(_msg(f"  正在从 {target} 卸载 HelloAGENTS...",
+                   f"  Uninstalling HelloAGENTS from {target}..."))
+        removed = _uninstall_dsh(dest_dir)
+        if removed:
+            print(_msg(f"  已移除 {len(removed)} 项", f"  Removed {len(removed)} item(s)"))
+        return True
+
     plugin_dest = dest_dir / PLUGIN_DIR_NAME
     rules_dest = dest_dir / rules_file
     removed = []

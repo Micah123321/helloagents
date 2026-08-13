@@ -1,0 +1,3 @@
+name: HelloAGENTS 模式
+description: HelloAGENTS 工作流（DSH 适配版）：路由协议、G3 输出格式、子代理编排、安全规则
+order: 5

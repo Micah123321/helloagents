@@ -1,7 +1,9 @@
 """HelloAGENTS Installer - Install operations."""
 
 import json
+import re
 import shutil
+import subprocess
 from pathlib import Path
 
 from .._common import (
@@ -10,7 +12,7 @@ from .._common import (
     GLOBAL_CONFIG_DIR, GLOBAL_CONFIG_FILE, VALID_CONFIG_KEYS,
     is_helloagents_file, is_helloagents_rule, backup_user_file,
     get_agents_md_path, get_skill_md_path, get_helloagents_module_path,
-    detect_installed_clis, clean_skills_dir,
+    detect_installed_clis, clean_skills_dir, cli_dir_for,
 )
 from .codex_config import (
     _configure_codex_toml, _configure_codex_csv_batch,
@@ -252,6 +254,48 @@ def _sync_global_config() -> None:
 # Install
 # ---------------------------------------------------------------------------
 
+def _reapply_fastctx() -> None:
+    """Re-apply FastCtx integration to Codex after install rewrote its files.
+
+    helloagents install overwrites ~/.codex/AGENTS.md (and touches config.toml),
+    which removes the guidance block FastCtx manages there. Re-running
+    `fastctx apply` restores the integration without user interaction.
+    """
+    exe = shutil.which("fastctx")
+    if exe is None:
+        print(_msg("  跳过 FastCtx 重新接入: 未找到 fastctx 命令（npm install -g fastctx）",
+                   "  Skipped FastCtx re-apply: fastctx command not found (npm install -g fastctx)"))
+        return
+
+    tier = "standard"
+    fastctx_config = Path.home() / ".fastctx" / "config.toml"
+    if fastctx_config.exists():
+        m = re.search(r'^\s*tier\s*=\s*"([^"]+)"',
+                      fastctx_config.read_text(encoding="utf-8"), re.MULTILINE)
+        if m:
+            tier = m.group(1)
+
+    try:
+        result = subprocess.run(
+            [exe, "apply", "--tier", tier, "--yes"],
+            capture_output=True, text=True, timeout=180,
+        )
+    except Exception as e:
+        print(_msg(f"  ⚠ FastCtx 重新接入失败: {e}",
+                   f"  ⚠ FastCtx re-apply failed: {e}"))
+        return
+
+    if result.returncode == 0:
+        print(_msg(f"  ✅ 已重新接入 FastCtx (tier={tier})，Codex 集成已恢复",
+                   f"  ✅ Re-applied FastCtx (tier={tier}); Codex integration restored"))
+    else:
+        detail = (result.stderr or result.stdout).strip().splitlines()
+        print(_msg(f"  ⚠ FastCtx 重新接入未完成 (exit {result.returncode})",
+                   f"  ⚠ FastCtx re-apply incomplete (exit {result.returncode})"))
+        if detail:
+            print(f"    {detail[-1]}")
+
+
 def install(target: str) -> bool:
     """Install HelloAGENTS to a specific CLI."""
     if target not in CLI_TARGETS:
@@ -261,13 +305,23 @@ def install(target: str) -> bool:
         return False
 
     config = CLI_TARGETS[target]
-    dest_dir = Path.home() / config["dir"]
+    dest_dir = cli_dir_for(target)
     rules_file = config["rules_file"]
     target_status = config.get("status", "active")
 
     if target_status == "experimental":
         print(_msg(f"  ℹ️ 提示: {target} 为实验性/社区项目，hooks 能力未经完整验证。",
                    f"  ℹ️ Note: {target} is experimental/community. Hook capabilities are not fully verified."))
+
+    # ── Preset-mode target (DSH) ──
+    if config.get("mode") == "preset":
+        from .dsh_config import _install_dsh
+        print(_msg(f"  正在安装 HelloAGENTS 到 {target}...",
+                   f"  Installing HelloAGENTS to {target}..."))
+        ok = _install_dsh(dest_dir)
+        if ok:
+            _sync_global_config()
+        return ok
 
     if not dest_dir.exists():
         print(_msg(f"  警告: {dest_dir} 不存在，{target} CLI 可能未安装。",
@@ -423,6 +477,9 @@ def install(target: str) -> bool:
                    "  Note: Run /experimental in Codex CLI to enable multi-agent features."))
         print(_msg("  提示: VS Code Codex 插件对 HelloAGENTS 系统的支持可能与 CLI 不同，建议优先在 Codex CLI 中使用。",
                    "  Note: VS Code Codex plugin may not fully support HelloAGENTS. Codex CLI is recommended."))
+        # install 会覆盖 ~/.codex/AGENTS.md，移除 FastCtx 管理的指引块；
+        # 立即重新接入 FastCtx，防止丢失其配置。
+        _reapply_fastctx()
 
     return True
 
