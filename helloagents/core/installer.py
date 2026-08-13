@@ -278,7 +278,7 @@ def _reapply_fastctx() -> None:
     try:
         result = subprocess.run(
             [exe, "apply", "--tier", tier, "--yes"],
-            capture_output=True, text=True, timeout=180,
+            capture_output=True, encoding="utf-8", errors="replace", timeout=180,
         )
     except Exception as e:
         print(_msg(f"  ⚠ FastCtx 重新接入失败: {e}",
