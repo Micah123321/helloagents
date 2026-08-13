@@ -36,12 +36,20 @@ _PRESET_ID = PLUGIN_DIR_NAME  # "helloagents"
 
 # Files shipped in the package under helloagents/dsh/
 _TEMPLATE_PREFIX = "dsh"
-_TEMPLATE_FILES = (
+_TEMPLATE_FILES: tuple[str, ...] = (
     "agent.cordis.yml",
     "preset.yml",
     "bootstrap.md",
     "helloagents-carrier.mjs",
     # skills/helloagents/SKILL.md is copied from get_skill_md_path() at runtime
+)
+# Directories shipped under helloagents/dsh/ — copied recursively
+_TEMPLATE_DIRS: tuple[str, ...] = (
+    "rules",
+    "stages",
+    "agents",
+    "services",
+    "skills",          # contains skills/helloagents/index.md (SKILL.md handled separately)
 )
 
 # ---------------------------------------------------------------------------
@@ -114,7 +122,7 @@ def _install_dsh(dsh_home: Path) -> bool:
         (preset_dir / "plugins").mkdir(parents=True, exist_ok=True)
         skills_dir.mkdir(parents=True, exist_ok=True)
 
-        # ● Copy template files
+        # ● Copy template files (individual files)
         for name in _TEMPLATE_FILES:
             src = template_dir / name
             if name == "helloagents-carrier.mjs":
@@ -125,6 +133,19 @@ def _install_dsh(dsh_home: Path) -> bool:
                 print(_msg(f"  ✗ 模板文件缺失: {name}", f"  ✗ Missing template: {name}"))
                 return False
             shutil.copy2(src, dst)
+
+        # ● Copy template directories (recursively)
+        for dir_name in _TEMPLATE_DIRS:
+            src_dir = template_dir / dir_name
+            if not src_dir.is_dir():
+                print(_msg(f"  ⚠ 模板目录缺失: {dir_name}", f"  ⚠ Missing template directory: {dir_name}"))
+                continue
+            dst_dir = preset_dir / dir_name
+            if dst_dir.exists():
+                shutil.rmtree(dst_dir)
+            shutil.copytree(src_dir, dst_dir, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            print(_msg(f"  ✓ 已部署 {dir_name}/ ({len(list(src_dir.iterdir()))} 个文件)",
+                       f"  ✓ Deployed {dir_name}/ ({len(list(src_dir.iterdir()))} file(s))"))
 
         # ● Copy SKILL.md (from the package root)
         skill_src = get_skill_md_path()

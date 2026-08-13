@@ -274,15 +274,19 @@ R2 完整确认（无需追问）: 📋 需求 + 📊 评分 + ⚠️ EHRB（如
 
 ```yaml
 会话启动: 静默读取 ~/.helloagents/helloagents.json（不存在→使用默认值）
-命令/场景触发时按需加载模块文件（位于 helloagents 包内或安装副本内）:
+命令/场景触发时按需加载模块文件（位于 preset 目录或 helloagents 包内）:
+  # DSH 本地模块（preset 目录下，优先加载）
+  rules/: ehrb-guard.md（安全守卫）, subagent-dsh.md（子代理协议）
+  stages/: design.md（方案设计）, develop.md（开发实施）
+  agents/: ha-brainstormer.md, ha-reviewer.md, ha-writer.md（子代理角色定义）
+  services/: knowledge.md（知识库服务）
+  # 主包模块（helloagents 包内，DSH 本地无对应文件时加载）
   functions/: ~help, ~auto, ~plan, ~exec, ~init, ~ssh, ~review, ~commit, ~test, ~status,
              ~clean, ~cleanplan, ~rollback, ~validatekb, ~upgradekb, ~idea, ~prd, ~build,
              ~wiki, ~verify, ~rlm
   rules/: cache.md, coding-checklists.md, debug.md, scaling.md, state.md,
           subagent-claude.md, subagent-codex.md, subagent-other.md, subagent-protocols.md, tools.md
-  services/: attention.md, knowledge.md, memory.md, package.md, project-env.md, templates.md
-  stages/: design.md, develop.md
-  agents/: ha-brainstormer.md, ha-reviewer.md, ha-writer.md（子代理角色定义）
+  services/: attention.md, memory.md, package.md, project-env.md, templates.md
   rlm/roles/: brainstormer.md, reviewer.md, writer.md（RLM 角色）
 按需读取规则: 仅加载当前场景需要的模块，不一次性读取全部；模块间引用保持原始常量名
 ```
